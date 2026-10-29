@@ -44,6 +44,9 @@ struct AppSettings: Codable {
     var sourceLanguageOverrides: [String: String]
     var sourceOutputLanguageOverrides: [String: String]
     var inputLanguageID: String
+    /// Concrete language the recognizer uses when inputLanguageID is "auto".
+    /// Updated whenever the user picks a concrete input language.
+    var recognitionLanguageID: String
     var outputLanguageID: String
     var interfaceLanguageID: String?
     var overlayStyle: OverlayStyle
@@ -62,6 +65,7 @@ struct AppSettings: Codable {
         sourceLanguageOverrides: [:],
         sourceOutputLanguageOverrides: [:],
         inputLanguageID: "en",
+        recognitionLanguageID: "en",
         outputLanguageID: "zh-Hans",
         interfaceLanguageID: nil,
         overlayStyle: .default,
@@ -88,6 +92,8 @@ struct AppSettings: Codable {
             ?? AppSettings.default.sourceOutputLanguageOverrides
         inputLanguageID = (try? c.decodeIfPresent(String.self, forKey: .inputLanguageID))
             ?? AppSettings.default.inputLanguageID
+        recognitionLanguageID = (try? c.decodeIfPresent(String.self, forKey: .recognitionLanguageID))
+            ?? AppSettings.default.recognitionLanguageID
         outputLanguageID = (try? c.decodeIfPresent(String.self, forKey: .outputLanguageID))
             ?? AppSettings.default.outputLanguageID
         interfaceLanguageID = try? c.decodeIfPresent(String.self, forKey: .interfaceLanguageID)
@@ -117,6 +123,7 @@ struct AppSettings: Codable {
         sourceLanguageOverrides: [String: String] = [:],
         sourceOutputLanguageOverrides: [String: String] = [:],
         inputLanguageID: String,
+        recognitionLanguageID: String = "en",
         outputLanguageID: String,
         interfaceLanguageID: String?,
         overlayStyle: OverlayStyle,
@@ -134,6 +141,7 @@ struct AppSettings: Codable {
         self.sourceLanguageOverrides = sourceLanguageOverrides
         self.sourceOutputLanguageOverrides = sourceOutputLanguageOverrides
         self.inputLanguageID  = inputLanguageID
+        self.recognitionLanguageID = recognitionLanguageID
         self.outputLanguageID = outputLanguageID
         self.interfaceLanguageID = interfaceLanguageID
         self.overlayStyle     = overlayStyle

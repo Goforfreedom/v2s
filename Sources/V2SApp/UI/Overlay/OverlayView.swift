@@ -302,11 +302,7 @@ struct OverlayView: View {
     }
 
     private func hasCommittedCaption(_ state: OverlayPreviewState) -> Bool {
-        usesSourceAsTranslationFallback(
-            translated: state.translatedText,
-            source: state.sourceText
-        )
-            || (showsTranslatedSubtitle && state.translatedText.isEmpty == false)
+        (showsTranslatedSubtitle && state.translatedText.isEmpty == false)
             || (showsOriginalSubtitle && state.sourceText.isEmpty == false)
     }
 
@@ -352,13 +348,9 @@ struct OverlayView: View {
     }
 
     private func estimatedHistoryEntryHeight(for entry: OverlayHistoryEntry) -> CGFloat {
-        let usesFallback = usesSourceAsTranslationFallback(
-            translated: entry.translatedText,
-            source: entry.sourceText
-        )
-        return estimatedCaptionPairHeight(
+        estimatedCaptionPairHeight(
             showsTranslated: showsTranslatedSubtitle,
-            showsSource: showsOriginalSubtitle && entry.sourceText.isEmpty == false && usesFallback == false
+            showsSource: showsOriginalSubtitle && entry.sourceText.isEmpty == false
         )
     }
 
@@ -394,10 +386,6 @@ struct OverlayView: View {
         for state: OverlayPreviewState,
         draftText: String
     ) -> String? {
-        if model.shouldReserveDraftTranslationSlot && showsOriginalSubtitle == false {
-            return draftText
-        }
-
         guard let draftTranslated = state.visibleDraftTranslatedText(
             for: draftText,
             promotionID: state.draftPromotionID
@@ -486,20 +474,24 @@ struct OverlayView: View {
         source: String,
         sourceColor: Color
     ) -> some View {
-        let usesFallback = usesSourceAsTranslationFallback(
-            translated: translated,
-            source: source
-        )
-        let primaryTranslatedText = usesFallback ? source : translated
-        let showsSourceLine = showsOriginalSubtitle && source.isEmpty == false && usesFallback == false
+        // While translation is pending, the translated slot stays reserved
+        // but blank instead of borrowing the source text, so the source
+        // line never disappears, moves, or gets swapped when the
+        // translation lands — the pair fills in place, one line at a time.
+        let translationPending = showsTranslatedSubtitle && translated.isEmpty && source.isEmpty == false
+        let showsSourceLine = showsOriginalSubtitle && source.isEmpty == false
 
         return VStack(spacing: Self.captionPairSpacing) {
             if model.overlayStyle.translatedFirst {
                 if showsTranslatedSubtitle {
-                    translatedText(
-                        primaryTranslatedText,
-                        color: translatedColor
-                    )
+                    if translationPending {
+                        translatedText(" ", color: translatedColor).hidden()
+                    } else {
+                        translatedText(
+                            translated,
+                            color: translatedColor
+                        )
+                    }
                 }
 
                 if showsSourceLine {
@@ -517,19 +509,17 @@ struct OverlayView: View {
                 }
 
                 if showsTranslatedSubtitle {
-                    translatedText(
-                        primaryTranslatedText,
-                        color: translatedColor
-                    )
+                    if translationPending {
+                        translatedText(" ", color: translatedColor).hidden()
+                    } else {
+                        translatedText(
+                            translated,
+                            color: translatedColor
+                        )
+                    }
                 }
             }
         }
-    }
-
-    /// usesSourceAsTranslationFallback
-    /// Returns true when a translated slot should show source text while translation is pending.
-    private func usesSourceAsTranslationFallback(translated: String, source: String) -> Bool {
-        showsTranslatedSubtitle && translated.isEmpty && source.isEmpty == false
     }
 
     private var showsOriginalSubtitle: Bool {

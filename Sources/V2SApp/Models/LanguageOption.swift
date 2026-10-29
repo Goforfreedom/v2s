@@ -107,6 +107,9 @@ enum LanguageCatalog {
     }
 
     static func displayName(for identifier: String, in interfaceLanguageID: String) -> String {
+        if identifier == TranslationCoordinator.automaticSourceLanguageID {
+            return AppLocalization.string(.automaticInputLanguage, languageID: interfaceLanguageID)
+        }
         let locale = Locale(identifier: interfaceLanguageID)
         return locale.localizedString(forIdentifier: identifier)
             ?? displayName(for: identifier)

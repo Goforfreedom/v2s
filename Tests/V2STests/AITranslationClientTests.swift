@@ -90,7 +90,7 @@ final class AITranslationClientTests: XCTestCase {
             return (Self.httpResponse(statusCode: 200), Self.chatCompletionJSON(content: "Bonjour"))
         }
         let result = try await makeClient().translate(
-            "Hello",
+            "Hello AI",
             sourceLanguageName: "English",
             targetLanguageName: "French",
             glossary: ["AI": "intelligence artificielle"],
@@ -106,6 +106,46 @@ final class AITranslationClientTests: XCTestCase {
         XCTAssertTrue(bodyString.contains("French"))
         XCTAssertTrue(bodyString.contains("intelligence artificielle"))
         XCTAssertTrue(bodyString.contains("test-model"))
+    }
+
+    func testTranslateOmitsGlossaryTermsAbsentFromText() async throws {
+        var capturedRequest: URLRequest?
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (Self.httpResponse(statusCode: 200), Self.chatCompletionJSON(content: "Bonjour"))
+        }
+        _ = try await makeClient().translate(
+            "Hello",
+            sourceLanguageName: "English",
+            targetLanguageName: "French",
+            glossary: ["AI": "intelligence artificielle"],
+            configuration: makeConfiguration()
+        )
+        let request = try XCTUnwrap(capturedRequest)
+        let body = try XCTUnwrap(request.httpBody)
+        let bodyString = try XCTUnwrap(String(data: body, encoding: .utf8))
+        XCTAssertFalse(bodyString.contains("intelligence artificielle"))
+    }
+
+    func testTranslateAutoDetectPromptOmitsSourceLanguage() async throws {
+        var capturedRequest: URLRequest?
+        MockURLProtocol.handler = { request in
+            capturedRequest = request
+            return (Self.httpResponse(statusCode: 200), Self.chatCompletionJSON(content: "Bonjour"))
+        }
+        _ = try await makeClient().translate(
+            "Hello",
+            sourceLanguageName: nil,
+            targetLanguageName: "French",
+            glossary: [:],
+            configuration: makeConfiguration()
+        )
+        let request = try XCTUnwrap(capturedRequest)
+        let body = try XCTUnwrap(request.httpBody)
+        let bodyString = try XCTUnwrap(String(data: body, encoding: .utf8))
+        XCTAssertTrue(bodyString.contains("Detect the language"))
+        XCTAssertTrue(bodyString.contains("French"))
+        XCTAssertFalse(bodyString.contains("from English"))
     }
 
     func testTranslateMaps401ToUnauthorized() async throws {

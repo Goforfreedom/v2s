@@ -398,7 +398,13 @@ extension AppModel {
             get: { self.inputLanguageID },
             set: {
                 guard self.isLanguagePairLocked == false else { return }
-                self.inputLanguageID = self.supportedSpeechInputLanguageID($0)
+                let normalized = self.supportedSpeechInputLanguageID($0)
+                self.inputLanguageID = normalized
+                // A concrete pick becomes the recognizer language that "auto"
+                // falls back to; picking "auto" leaves it untouched.
+                if normalized != TranslationCoordinator.automaticSourceLanguageID {
+                    self.recognitionLanguageID = normalized
+                }
             }
         )
     }

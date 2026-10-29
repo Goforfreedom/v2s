@@ -28,6 +28,7 @@ enum AppTextKey: String {
     case refreshSources
     case languages
     case defaultInputLanguage
+    case automaticInputLanguage
     case defaultSubtitleLanguage
     case useDefaultFormat
     case inputLanguage
@@ -488,6 +489,7 @@ enum AppLocalization {
             "aiTranslationTestFailedFormat": "Connection failed: %@",
             "aiTranslationMissingAPIKey": "Enter an API key first.",
             "aiTranslationPrivacyNote": "AI translation is optional and off by default. When enabled, subtitle text (not audio) is sent to your selected API provider.",
+            "automaticInputLanguage": "Auto Detect",
         ],
         "zh-Hans": [
             "start": "开始",
@@ -670,6 +672,7 @@ enum AppLocalization {
             "aiTranslationTestFailedFormat": "连接失败：%@",
             "aiTranslationMissingAPIKey": "请先填写 API Key。",
             "aiTranslationPrivacyNote": "AI 翻译为可选项，默认关闭。开启后，字幕文本（不含音频）会发送给你选择的 API 服务商。",
+            "automaticInputLanguage": "自动识别",
         ],
         "es": [
             "start": "Iniciar",

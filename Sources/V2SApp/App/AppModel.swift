@@ -62,6 +62,14 @@ final class AppModel: ObservableObject {
     private var lastDraftTranslationSource = ""
     private var lastDraftTranslationPromotionID: UUID?
     private var draftTranslationGeneration: Int = 0
+    /// True once a draft translation task has passed its coalescing delay
+    /// and is actually waiting on the network. Drafts arriving in that
+    /// window don't cancel it; they wait in pendingDraftTranslation and are
+    /// translated right after, so translations keep landing during
+    /// continuous speech instead of being restarted forever.
+    private var draftTranslationNetworkActive = false
+    /// Latest draft that arrived while a translation request was in flight.
+    private var pendingDraftTranslation: (text: String, promotionID: UUID?, sourceLanguageID: String, targetLanguageID: String, generation: Int)?
     private var draftClearGeneration: Int = 0
     private var displayedCaptionLastVisualUpdateAt = Date.distantPast
     private var displayedCaptionLastVisualUpdateWasLateTranslation = false
@@ -119,6 +127,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Concrete language the recognizer uses while inputLanguageID is "auto".
+    /// It tracks the last concrete input language the user picked, so the
+    /// recognizer locale never has to be guessed from the "auto" sentinel.
+    @Published var recognitionLanguageID: String {
+        didSet {
+            persistSettings()
+        }
+    }
+
     @Published var sourceLanguageOverrides: [String: String] {
         didSet {
             persistSettings()
@@ -155,6 +172,12 @@ final class AppModel: ObservableObject {
     @Published var translationEngine: TranslationEngine {
         didSet {
             persistSettings()
+            // Apple translation needs a fixed source language, so leaving AI
+            // mode drops "auto" back to the concrete recognition language.
+            if translationEngine == .apple,
+               inputLanguageID == TranslationCoordinator.automaticSourceLanguageID {
+                inputLanguageID = recognitionLanguageID
+            }
         }
     }
 
@@ -235,6 +258,7 @@ final class AppModel: ObservableObject {
         self.sourceLanguageOverrides = settings.sourceLanguageOverrides
         self.sourceOutputLanguageOverrides = settings.sourceOutputLanguageOverrides
         self.inputLanguageID = settings.inputLanguageID
+        self.recognitionLanguageID = settings.recognitionLanguageID
         self.outputLanguageID = settings.outputLanguageID
         self.usesSystemInterfaceLanguage = settings.interfaceLanguageID == nil
         self.interfaceLanguageID = LanguageCatalog.preferredInterfaceLanguageID(
@@ -645,6 +669,10 @@ final class AppModel: ObservableObject {
         for source in selectedSources {
             let sourceLanguageID = languageID(for: source)
             let targetLanguageID = outputLanguageIDForSource(source)
+            // The recognizer needs a concrete locale even when the input is
+            // "auto"; the handlers below keep the "auto" ID so translation
+            // still detects the language from the text.
+            let sessionRecognitionLanguageID = resolvedRecognitionLanguageID(for: sourceLanguageID)
             let session = LiveTranscriptionSession()
             // Identity only. Capturing the session in the handler it is about to own
             // would retain it for the session's own lifetime.
@@ -653,7 +681,7 @@ final class AppModel: ObservableObject {
             do {
                 try await session.start(
                     source: source,
-                    localeIdentifier: speechLocaleIdentifier(for: sourceLanguageID),
+                    localeIdentifier: speechLocaleIdentifier(for: sessionRecognitionLanguageID),
                     interfaceLanguageID: resolvedInterfaceLanguageID,
                     modeConfig: config,
                     contextualStrings: recognitionHints,
@@ -906,6 +934,7 @@ final class AppModel: ObservableObject {
             sourceLanguageOverrides: sourceLanguageOverrides,
             sourceOutputLanguageOverrides: sourceOutputLanguageOverrides,
             inputLanguageID: inputLanguageID,
+            recognitionLanguageID: recognitionLanguageID,
             outputLanguageID: outputLanguageID,
             interfaceLanguageID: usesSystemInterfaceLanguage ? nil : interfaceLanguageID,
             overlayStyle: overlayStyle,
@@ -1018,15 +1047,41 @@ final class AppModel: ObservableObject {
     }
 
     func supportedSpeechInputLanguageID(_ identifier: String) -> String {
-        speechLanguageOptions.contains(where: { $0.id == identifier }) ? identifier : "en"
+        identifier == TranslationCoordinator.automaticSourceLanguageID
+            || speechLanguageOptions.contains(where: { $0.id == identifier }) ? identifier : "en"
+    }
+
+    /// Input-language options for the default picker. "Auto Detect" sits on
+    /// top only in AI mode, because Apple translation needs a fixed pair.
+    var inputLanguageOptions: [LanguageOption] {
+        guard translationEngine == .ai else {
+            return speechLanguageOptions
+        }
+        let auto = LanguageOption(
+            id: TranslationCoordinator.automaticSourceLanguageID,
+            displayName: "Auto Detect"
+        )
+        return [auto] + speechLanguageOptions
+    }
+
+    /// Maps an "auto" input to the concrete language the recognizer must
+    /// actually run with. Every other ID passes through untouched.
+    func resolvedRecognitionLanguageID(for sourceLanguageID: String) -> String {
+        guard sourceLanguageID == TranslationCoordinator.automaticSourceLanguageID else {
+            return sourceLanguageID
+        }
+        return recognitionLanguageID == TranslationCoordinator.automaticSourceLanguageID
+            ? "en"
+            : recognitionLanguageID
     }
 
     /// Names the selected speech languages that this Mac can only recognize through
     /// Apple's servers, or nil when everything selected stays on device.
     var serverSpeechRecognitionNotice: String? {
-        let selectedLanguageIDs = selectedSources.isEmpty
+        let selectedLanguageIDs = (selectedSources.isEmpty
             ? [inputLanguageID]
-            : selectedSources.map { languageID(for: $0) }
+            : selectedSources.map { languageID(for: $0) })
+            .map { resolvedRecognitionLanguageID(for: $0) }
 
         let serverLanguageIDs = Set(selectedLanguageIDs).subtracting(onDeviceSpeechLanguageIDs)
         guard serverLanguageIDs.isEmpty == false else {
@@ -1071,8 +1126,16 @@ final class AppModel: ObservableObject {
                 sourceLanguageOverrides = sourceLanguageOverrides.filter {
                     supportedIDs.contains($0.value)
                 }
-                if supportedIDs.contains(inputLanguageID) == false {
+                if inputLanguageID != TranslationCoordinator.automaticSourceLanguageID,
+                   supportedIDs.contains(inputLanguageID) == false {
                     inputLanguageID = resolvedSpeechOptions.first(where: { $0.id == "en" })?.id
+                        ?? resolvedSpeechOptions[0].id
+                    recognitionLanguageID = inputLanguageID
+                }
+                // The recognizer language must stay usable too, or an "auto"
+                // session would start with a locale this Mac no longer has.
+                if supportedIDs.contains(recognitionLanguageID) == false {
+                    recognitionLanguageID = resolvedSpeechOptions.first(where: { $0.id == "en" })?.id
                         ?? resolvedSpeechOptions[0].id
                 }
             }
@@ -1152,8 +1215,8 @@ final class AppModel: ObservableObject {
         if translationEngine == .ai {
             let selectedSources = self.selectedSources
             let speechLanguageIDs = selectedSources.isEmpty
-                ? [inputLanguageID]
-                : Set(selectedSources.map { languageID(for: $0) }).sorted()
+                ? [resolvedRecognitionLanguageID(for: inputLanguageID)]
+                : Set(selectedSources.map { resolvedRecognitionLanguageID(for: languageID(for: $0)) }).sorted()
             return (speechLanguageIDs, [])
         }
 
@@ -1822,6 +1885,8 @@ final class AppModel: ObservableObject {
             draftTranslationTask?.cancel()
             draftTranslationTask = nil
             draftTranslationGeneration &+= 1
+            pendingDraftTranslation = nil
+            draftTranslationNetworkActive = false
             overlayState?.setDraftTranslation(
                 draftText,
                 sourceText: draftText,
@@ -1875,6 +1940,8 @@ final class AppModel: ObservableObject {
         draftTranslationTask?.cancel()
         draftTranslationTask = nil
         draftTranslationGeneration &+= 1
+        pendingDraftTranslation = nil
+        draftTranslationNetworkActive = false
     }
 
     private func scheduleDraftTranslation(
@@ -1883,6 +1950,19 @@ final class AppModel: ObservableObject {
         sourceLanguageID: String,
         targetLanguageID: String
     ) {
+        // A request already on the network keeps running: cancelling it on
+        // every draft change would starve translations during continuous
+        // speech. The latest draft waits here and is translated right after.
+        if draftTranslationNetworkActive {
+            pendingDraftTranslation = (
+                text: text,
+                promotionID: promotionID,
+                sourceLanguageID: sourceLanguageID,
+                targetLanguageID: targetLanguageID,
+                generation: draftTranslationGeneration
+            )
+            return
+        }
         draftTranslationTask?.cancel()
         draftTranslationGeneration &+= 1
         let generation = draftTranslationGeneration
@@ -1909,25 +1989,33 @@ final class AppModel: ObservableObject {
                 return
             }
 
-            // Runs until it completes or a newer draft supersedes it — the next
-            // scheduleDraftTranslation call cancels this task, and the staleness
-            // guards below drop results whose draft is no longer visible. A slow
-            // translation that lands while the draft is still current is more
-            // useful applied late than discarded on a fixed deadline.
+            draftTranslationNetworkActive = true
+            // Runs until it completes; a newer draft that arrived meanwhile
+            // waits in pendingDraftTranslation instead of cancelling this
+            // request. A slow translation that lands while the draft is still
+            // current is more useful applied late than discarded on a fixed
+            // deadline.
             let translated = try? await translationCoordinator.translate(
                 text,
                 from: sourceLanguageID,
                 to: targetLanguageID
             )
+            draftTranslationNetworkActive = false
 
-            guard !Task.isCancelled,
-                  liveTranscriptionSession != nil,
-                  generation == draftTranslationGeneration,
-                  overlayState?.draftSourceText == text,
-                  overlayState?.draftPromotionID == promotionID,
-                  activeDraftSourceLanguageID == sourceLanguageID,
-                  activeDraftTargetLanguageID == targetLanguageID else { return }
-            if let translated {
+            // Take any draft that arrived while this request was in flight
+            // before applying this result, so the follow-up is never lost
+            // even if this result turns out to be stale.
+            let followUp = pendingDraftTranslation
+            pendingDraftTranslation = nil
+
+            if !Task.isCancelled,
+               liveTranscriptionSession != nil,
+               generation == draftTranslationGeneration,
+               overlayState?.draftSourceText == text,
+               overlayState?.draftPromotionID == promotionID,
+               activeDraftSourceLanguageID == sourceLanguageID,
+               activeDraftTargetLanguageID == targetLanguageID,
+               let translated {
                 let resolvedTranslation = glossaryService.apply(to: translated, glossary: glossary)
                 if shouldTreatAsMissingTranslation(
                     resolvedTranslation,
@@ -1941,6 +2029,19 @@ final class AppModel: ObservableObject {
                         promotionID: promotionID
                     )
                 }
+            }
+
+            // Translate the latest waiting draft now. Clearing the task
+            // slot first keeps this scheduling from cancelling this task
+            // itself, which would drop the result applied above.
+            if let followUp, followUp.generation == draftTranslationGeneration {
+                draftTranslationTask = nil
+                scheduleDraftTranslation(
+                    for: followUp.text,
+                    promotionID: followUp.promotionID,
+                    sourceLanguageID: followUp.sourceLanguageID,
+                    targetLanguageID: followUp.targetLanguageID
+                )
             }
         }
     }
@@ -2049,6 +2150,8 @@ final class AppModel: ObservableObject {
                 draftTranslationTask?.cancel()
                 draftTranslationTask = nil
                 draftTranslationGeneration &+= 1
+                pendingDraftTranslation = nil
+                draftTranslationNetworkActive = false
                 overlayState?.setDraftTranslation(
                     draftText,
                     sourceText: draftText,
@@ -2059,6 +2162,8 @@ final class AppModel: ObservableObject {
             draftTranslationTask?.cancel()
             draftTranslationTask = nil
             draftTranslationGeneration &+= 1
+            pendingDraftTranslation = nil
+            draftTranslationNetworkActive = false
             overlayState?.clearDraftTranslation()
         }
 

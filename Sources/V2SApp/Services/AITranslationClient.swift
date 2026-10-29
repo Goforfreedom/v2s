@@ -52,10 +52,11 @@ final class AITranslationClient: Sendable {
 
     /// Translates one sentence. Returns the trimmed translation text, which
     /// may be empty when the model returns no content; the caller decides
-    /// how to handle an empty result.
+    /// how to handle an empty result. A nil sourceLanguageName means
+    /// "auto detect": the model identifies the source language from the text.
     func translate(
         _ text: String,
-        sourceLanguageName: String,
+        sourceLanguageName: String?,
         targetLanguageName: String,
         glossary: [String: String],
         configuration: Configuration
@@ -63,7 +64,8 @@ final class AITranslationClient: Sendable {
         let systemPrompt = Self.systemPrompt(
             sourceLanguageName: sourceLanguageName,
             targetLanguageName: targetLanguageName,
-            glossary: glossary
+            glossary: glossary,
+            text: text
         )
         let content = try await performChatCompletion(
             messages: [
@@ -88,14 +90,24 @@ final class AITranslationClient: Sendable {
     }
 
     private static func systemPrompt(
-        sourceLanguageName: String,
+        sourceLanguageName: String?,
         targetLanguageName: String,
-        glossary: [String: String]
+        glossary: [String: String],
+        text: String
     ) -> String {
-        var prompt = "You are a translation engine. Translate the user's text from \(sourceLanguageName) to \(targetLanguageName). Output only the translation, without any explanation."
+        var prompt: String
+        if let sourceLanguageName, sourceLanguageName.isEmpty == false {
+            prompt = "You are a translation engine. Translate the user's text from \(sourceLanguageName) to \(targetLanguageName). Output only the translation, without any explanation."
+        } else {
+            prompt = "You are a translation engine. Detect the language of the user's text and translate it into \(targetLanguageName). Output only the translation, without any explanation."
+        }
+        // Only terms that actually appear in this sentence can affect its
+        // translation, so the rest are left out to keep the prompt — and the
+        // time to first token — small when the glossary is large.
+        let lowercasedText = text.lowercased()
         let terms = glossary
             .map { (source: $0.key.trimmingCharacters(in: .whitespacesAndNewlines), target: $0.value) }
-            .filter { !$0.source.isEmpty }
+            .filter { !$0.source.isEmpty && lowercasedText.contains($0.source.lowercased()) }
             .sorted { $0.source < $1.source }
         if terms.isEmpty == false {
             let list = terms.map { "\"\($0.source)\" -> \"\($0.target)\"" }.joined(separator: "; ")

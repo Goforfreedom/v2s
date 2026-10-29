@@ -34,6 +34,12 @@ final class TranslationCoordinator: ObservableObject {
     /// Configuration for the AI translation engine. The API key is held only
     /// in memory here; it is loaded from the Keychain by the app model and
     /// never written to the settings file.
+    /// Sentinel source-language ID for "auto detect" input. The recognizer
+    /// still needs a concrete locale (resolved by the caller), but the AI
+    /// translation prompt detects the language from the text instead of
+    /// being told a fixed source language.
+    static let automaticSourceLanguageID = "auto"
+
     struct AIConfiguration {
         var baseURL: String
         var model: String
@@ -232,9 +238,14 @@ final class TranslationCoordinator: ObservableObject {
         // the caption it belonged to.
         if translationEngine == .ai, let aiConfiguration {
             do {
+                // "auto" input: let the model detect the source language from
+                // the text instead of naming a fixed source language.
+                let sourceLanguageName: String? = sourceIdentifier == Self.automaticSourceLanguageID
+                    ? nil
+                    : aiConfiguration.languageName(sourceIdentifier)
                 let translated = try await aiClient.translate(
                     trimmedText,
-                    sourceLanguageName: aiConfiguration.languageName(sourceIdentifier),
+                    sourceLanguageName: sourceLanguageName,
                     targetLanguageName: aiConfiguration.languageName(targetIdentifier),
                     glossary: aiConfiguration.glossary,
                     configuration: AITranslationClient.Configuration(

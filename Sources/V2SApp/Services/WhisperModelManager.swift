@@ -27,19 +27,18 @@ final class WhisperModelManager: ObservableObject {
         /// SDK maps these to the openai_whisper-{model} folders in
         /// argmaxinc/whisperkit-coreml; the folder prefix is not part of
         /// the model name.
-        var variant: String {
-            switch self {
-            case tiny: return "tiny"
-            case base: return "base"
-            case small: return "small"
-            }
-        }
+        /// Raw values are exactly the SDK model names, so no switch needed.
+        var variant: String { rawValue }
 
         var downloadSizeText: String {
-            switch self {
-            case tiny: return "~80 MB"
-            case base: return "~150 MB"
-            case small: return "~500 MB"
+            // Switched on the raw string, not on enum cases: the bare
+            // `case tiny:` patterns below used to fail CI with
+            // "enum case cannot be used as an instance member".
+            switch rawValue {
+            case "tiny": return "~80 MB"
+            case "base": return "~150 MB"
+            case "small": return "~500 MB"
+            default: return ""
             }
         }
     }

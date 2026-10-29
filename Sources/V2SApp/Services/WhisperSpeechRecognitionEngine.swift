@@ -155,16 +155,21 @@ final class WhisperSpeechRecognitionEngine: SpeechRecognitionEngine, @unchecked 
 
     private func transcribe(_ audio: [Float]) async throws -> (text: String, language: String?) {
         let options = DecodingOptions(language: language)
-        // The SDK's single-array overload returns one optional result, not
-        // an array (the array form is the plural transcribe(audioArrays:)).
-        // The explicit type pins the single-result overload, and no progress
-        // callback is passed, so this compiles whether or not the overload
-        // takes one. A cancelled in-flight call still finishes, but its
-        // result is discarded by the caller's generation guard.
-        let result: TranscriptionResult? = try await gate.run {
-            try await self.pipeline.transcribe(audioArray: audio, decodeOptions: options)
+        // The single-array overload returns [TranscriptionResult] (the CI
+        // log proved this: optional chaining on the result failed with
+        // "non-optional value of type '[TranscriptionResult]'"). The
+        // callback form resolves that overload; a cancelled call's result
+        // is discarded by the caller's generation guard.
+        let results: [TranscriptionResult] = try await gate.run {
+            try await self.pipeline.transcribe(
+                audioArray: audio,
+                decodeOptions: options
+            ) { _ in
+                !Task.isCancelled
+            }
         }
-        let text = result?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return (text, result?.language)
+        let text = results.map(\.text).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text, results.first?.language)
     }
 }

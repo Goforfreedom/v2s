@@ -187,6 +187,20 @@ enum AppTextKey: String {
     case aiTranslationTestFailedFormat
     case aiTranslationMissingAPIKey
     case aiTranslationPrivacyNote
+    case recognitionModel
+    case recognitionModelTiny
+    case recognitionModelBase
+    case recognitionModelSmall
+    case recognitionModelIntelNote
+    case recognitionModelFirstDownloadNote
+    case recognitionModelDownload
+    case recognitionModelLoading
+    case recognitionModelReady
+    case recognitionModelErrorFormat
+    case recognitionModelRetry
+    case recognitionFellBackToAppleFormat
+    case recognitionFallbackReasonIntel
+    case recognitionFallbackReasonLoading
 }
 
 enum AppLocalization {
@@ -489,6 +503,20 @@ enum AppLocalization {
             "aiTranslationTestFailedFormat": "Connection failed: %@",
             "aiTranslationMissingAPIKey": "Enter an API key first.",
             "aiTranslationPrivacyNote": "AI translation is optional and off by default. When enabled, subtitle text (not audio) is sent to your selected API provider.",
+            "recognitionModel": "Speech Recognition",
+            "recognitionModelTiny": "Tiny",
+            "recognitionModelBase": "Base",
+            "recognitionModelSmall": "Small",
+            "recognitionModelIntelNote": "This Mac uses an Intel chip, so recognition falls back to Apple speech recognition.",
+            "recognitionModelFirstDownloadNote": "On first use the model is downloaded from HuggingFace and cached locally; audio never leaves this Mac.",
+            "recognitionModelDownload": "Download model",
+            "recognitionModelLoading": "Downloading / loading recognition model…",
+            "recognitionModelReady": "Recognition model ready",
+            "recognitionModelErrorFormat": "Recognition model failed: %@",
+            "recognitionModelRetry": "Retry",
+            "recognitionFellBackToAppleFormat": "Fell back to Apple speech recognition: %@",
+            "recognitionFallbackReasonIntel": "Intel Mac",
+            "recognitionFallbackReasonLoading": "model still downloading",
             "automaticInputLanguage": "Auto Detect",
         ],
         "zh-Hans": [
@@ -672,6 +700,20 @@ enum AppLocalization {
             "aiTranslationTestFailedFormat": "连接失败：%@",
             "aiTranslationMissingAPIKey": "请先填写 API Key。",
             "aiTranslationPrivacyNote": "AI 翻译为可选项，默认关闭。开启后，字幕文本（不含音频）会发送给你选择的 API 服务商。",
+            "recognitionModel": "语音识别",
+            "recognitionModelTiny": "极小",
+            "recognitionModelBase": "标准",
+            "recognitionModelSmall": "小型",
+            "recognitionModelIntelNote": "此 Mac 为 Intel 机型，识别使用 Apple 语音识别。",
+            "recognitionModelFirstDownloadNote": "首次使用需从 HuggingFace 下载模型并缓存在本机；音频始终不出设备。",
+            "recognitionModelDownload": "下载模型",
+            "recognitionModelLoading": "正在下载 / 加载识别模型…",
+            "recognitionModelReady": "识别模型就绪",
+            "recognitionModelErrorFormat": "识别模型加载失败：%@",
+            "recognitionModelRetry": "重试",
+            "recognitionFellBackToAppleFormat": "已回退到 Apple 语音识别：%@",
+            "recognitionFallbackReasonIntel": "Intel 机型",
+            "recognitionFallbackReasonLoading": "模型正在下载",
             "automaticInputLanguage": "自动识别",
         ],
         "es": [

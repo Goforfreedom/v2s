@@ -13,10 +13,15 @@ private extension Logger {
 struct RecognizedSentence: Equatable, Sendable {
     let text: String
     let promotionSegmentID: UUID?
+    /// Whisper language code reported for this sentence (nil for Apple
+    /// recognition and for segments that held no audio). AppModel maps it
+    /// back to an app language ID when translation needs a concrete source.
+    let detectedLanguageID: String?
 
-    init(text: String, promotionSegmentID: UUID? = nil) {
+    init(text: String, promotionSegmentID: UUID? = nil, detectedLanguageID: String? = nil) {
         self.text = text
         self.promotionSegmentID = promotionSegmentID
+        self.detectedLanguageID = detectedLanguageID
     }
 }
 
@@ -60,6 +65,13 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
     private struct CommittedEmission {
         let text: String
         let promotionSegmentID: UUID?
+        let detectedLanguageID: String?
+
+        init(text: String, promotionSegmentID: UUID? = nil, detectedLanguageID: String? = nil) {
+            self.text = text
+            self.promotionSegmentID = promotionSegmentID
+            self.detectedLanguageID = detectedLanguageID
+        }
     }
 
     private struct ApplicationCaptureDescriptor: Sendable {
@@ -83,6 +95,7 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
     private enum RecognitionBackend {
         case legacy
         case speechAnalyzer
+        case whisper
     }
 
     enum SessionError: LocalizedError, AppLocalizableError {
@@ -161,6 +174,11 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
     private var committedAudioBoundaryTime: TimeInterval?
     private var recognitionContextualStrings: [String] = []
     private var recognitionBackend: RecognitionBackend = .legacy
+    /// WhisperKit engine for the whisper backend. Nil means Apple recognition.
+    /// The engine is created by the owner (which owns the shared model) and
+    /// handed in at start; the session only feeds it audio and forwards its
+    /// draft/final callbacks into the existing draft/commit machinery.
+    private var whisperEngine: (any SpeechRecognitionEngine)?
     private var activeLocaleIdentifier: String?
     private var interfaceLanguageID = "en"
     private var modernAnalyzerTask: Task<Void, Never>?
@@ -258,6 +276,7 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
         interfaceLanguageID: String,
         modeConfig: ModeConfig = .balanced,
         contextualStrings: [String] = [],
+        whisperEngine: (any SpeechRecognitionEngine)? = nil,
         transcriptHandler: @escaping @MainActor (RecognizedSentence) -> Void,
         partialHandler: @escaping @MainActor (DraftSegment?) -> Void,
         errorHandler: @escaping @MainActor (String) -> Void,
@@ -267,16 +286,35 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
         self.partialHandler = partialHandler
         self.modeConfig = modeConfig
         self.recognitionContextualStrings = sanitizeContextualStrings(contextualStrings)
-        self.activeLocaleIdentifier = localeIdentifier
         self.interfaceLanguageID = interfaceLanguageID
         self.errorHandler = errorHandler
         self.fatalErrorHandler = fatalErrorHandler
+        self.whisperEngine = whisperEngine
         await MainActor.run {
             recentCommittedSentenceHistory.removeAll()
         }
 
+        if let whisperEngine {
+            // Whisper path: no Apple recognizer is configured at all, so no
+            // speech permission is needed either (requestRequiredPermissions
+            // skips the speech check for this backend). The locale is only
+            // used for sentence heuristics (e.g. Japanese dialogue splitting);
+            // auto-detected input has none until a segment reports one.
+            recognitionBackend = .whisper
+            if let code = whisperEngine.language,
+               let appLanguageID = WhisperRecognitionLanguage.appLanguageID(forWhisperCode: code) {
+                activeLocaleIdentifier = LanguageCatalog.speechLocaleIdentifier(for: appLanguageID)
+            } else {
+                activeLocaleIdentifier = nil
+            }
+            wireWhisperEngine(whisperEngine)
+        } else {
+            activeLocaleIdentifier = localeIdentifier
+        }
+
         try await requestRequiredPermissions(for: source)
-        if try await configureModernSpeechRecognizer(localeIdentifier: localeIdentifier) == false {
+        if whisperEngine == nil,
+           try await configureModernSpeechRecognizer(localeIdentifier: localeIdentifier) == false {
             try await runOnCaptureQueue {
                 try self.configureSpeechRecognizer(localeIdentifier: localeIdentifier)
             }
@@ -294,6 +332,79 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
             try await runOnCaptureQueue {
                 try self.startApplicationAudioCapture(descriptor: captureDescriptor)
             }
+        }
+    }
+
+    /// Wires a Whisper engine's callbacks into the session's draft/commit
+    /// machinery. Callbacks may arrive on any queue, so each one hops to the
+    /// capture queue before touching session state.
+    private func wireWhisperEngine(_ engine: any SpeechRecognitionEngine) {
+        engine.onDraft = { [weak self] text in
+            guard let self else { return }
+            captureQueue.async { [weak self] in
+                self?.emitWhisperDraft(text)
+            }
+        }
+        engine.onFinal = { [weak self] text, detectedLanguage in
+            guard let self else { return }
+            captureQueue.async { [weak self] in
+                self?.emitWhisperFinal(text: text, detectedLanguage: detectedLanguage)
+            }
+        }
+    }
+
+    /// Whisper partial text becomes a fully mutable draft: Whisper partials
+    /// can revise anywhere, so there is no stable prefix. The ASR-inactivity
+    /// timer is rearmed here, mirroring the Apple path's draft-driven timing.
+    private func emitWhisperDraft(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            Task { await emitPartialDraft(nil) }
+            return
+        }
+        let now = Date()
+        let draft = DraftSegment(
+            segmentId: currentDraftId,
+            sourceText: trimmed,
+            stablePrefixLength: 0,
+            mutableTailText: trimmed,
+            avgConfidence: 0,
+            startMs: 0,
+            lastUpdateMs: Int(now.timeIntervalSinceReferenceDate * 1000),
+            silenceMs: 0,
+            stabilityScore: 0,
+            boundaryScore: 0,
+            chunkScore: 0,
+            vadProbability: lastVADProbability,
+            words: []
+        )
+        scheduleSilenceCommit(trigger: .asrInactivity, afterMs: silenceCommitDeadlineMs)
+        Task { await emitPartialDraft(draft) }
+    }
+
+    /// A finished Whisper segment commits through the same sequence as the
+    /// Apple paths (sentence splitting, dedup, draft promotion), carrying
+    /// the detected language for translation. Empty text clears the draft
+    /// and commits nothing.
+    private func emitWhisperFinal(text: String, detectedLanguage: String?) {
+        let committedDraftID = currentDraftId
+        resetDraftState()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            Task { await emitPartialDraft(nil) }
+            return
+        }
+        Task {
+            await emitCommittedSequence(
+                [
+                    CommittedEmission(
+                        text: trimmed,
+                        promotionSegmentID: committedDraftID,
+                        detectedLanguageID: detectedLanguage
+                    )
+                ],
+                clearDraftAfter: true
+            )
         }
     }
 
@@ -328,6 +439,8 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
         resetApplicationCaptureRecovery()
 
         stopModernSpeechRecognizer()
+        whisperEngine?.stop()
+        whisperEngine = nil
         resetRecognitionFailureState()
         recognitionGeneration &+= 1
         recognitionRequest?.endAudio()
@@ -350,20 +463,25 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
     }
 
     private func requestRequiredPermissions(for source: InputSource) async throws {
-        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        // WhisperKit never touches Apple's speech APIs, so the Whisper backend
+        // must not prompt for speech permission. Microphone permission below
+        // still applies to microphone sources.
+        if whisperEngine == nil {
+            let speechStatus = SFSpeechRecognizer.authorizationStatus()
 
-        switch speechStatus {
-        case .authorized:
-            break
-        case .notDetermined:
-            let granted = await requestSpeechAuthorization()
-            guard granted else {
+            switch speechStatus {
+            case .authorized:
+                break
+            case .notDetermined:
+                let granted = await requestSpeechAuthorization()
+                guard granted else {
+                    throw SessionError.speechPermissionDenied
+                }
+            case .denied, .restricted:
+                throw SessionError.speechPermissionDenied
+            @unknown default:
                 throw SessionError.speechPermissionDenied
             }
-        case .denied, .restricted:
-            throw SessionError.speechPermissionDenied
-        @unknown default:
-            throw SessionError.speechPermissionDenied
         }
 
         switch source.category {
@@ -1105,6 +1223,18 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
             }
         }
 
+        if recognitionBackend == .whisper {
+            // The processing buffer is already 16 kHz mono float32, exactly
+            // what WhisperKit transcribes. Copy the samples: the engine
+            // accumulates them across appends.
+            if let whisperEngine, let channelData = processingBuffer.floatChannelData {
+                let frameCount = Int(processingBuffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
+                whisperEngine.appendAudio(samples: samples)
+            }
+            return
+        }
+
         if recognitionBackend == .speechAnalyzer {
             appendToSpeechAnalyzer(processingBuffer)
             return
@@ -1394,7 +1524,8 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
                 emitRecognizedSentence(
                     RecognizedSentence(
                         text: preparedSentence,
-                        promotionSegmentID: pendingPromotionID
+                        promotionSegmentID: pendingPromotionID,
+                        detectedLanguageID: emission.detectedLanguageID
                     )
                 )
                 rememberCommittedSentence(preparedSentence)
@@ -2442,6 +2573,13 @@ final class LiveTranscriptionSession: NSObject, @unchecked Sendable {
             silenceCommitTimer = nil
         case .vadOffset:
             vadSilenceCommitTimer = nil
+        }
+
+        // Whisper commits whole VAD segments: a pause finalizes whatever the
+        // current segment accumulated, for both timer triggers.
+        if recognitionBackend == .whisper {
+            whisperEngine?.finalizeCurrentSegment()
+            return
         }
 
         // SpeechAnalyzer commits only finalized results, so a pause asks the transcriber

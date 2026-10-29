@@ -89,8 +89,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var overlayState: OverlayPreviewState?
     @Published private(set) var languageResourceStatuses: [LanguageResourceStatus] = []
     @Published private(set) var speechLanguageOptions = LanguageCatalog.speechInput
-    /// Speech languages this Mac can recognize without sending audio to Apple.
-    @Published private(set) var onDeviceSpeechLanguageIDs: Set<String> = []
     @Published private(set) var translationLanguageOptions = LanguageCatalog.common
     @Published private(set) var translationHostConfiguration: TranslationSession.Configuration?
     @Published private(set) var transcriptEntries: [TranscriptEntry] = []
@@ -127,14 +125,27 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Concrete language the recognizer uses while inputLanguageID is "auto".
-    /// It tracks the last concrete input language the user picked, so the
-    /// recognizer locale never has to be guessed from the "auto" sentinel.
-    @Published var recognitionLanguageID: String {
+    /// Shared Whisper model lifecycle (download / load / fallback). The
+    /// manager's changes are forwarded through objectWillChange so views
+    /// reading it refresh without a separate subscription.
+    let whisperModelManager: WhisperModelManager
+
+    @Published var recognitionModel: WhisperModelManager.Model {
         didSet {
+            whisperModelManager.setModel(recognitionModel)
             persistSettings()
         }
     }
+
+    /// Why the latest session start fell back to Apple recognition, or nil
+    /// when the latest start used Whisper. Shown in Settings and the popover.
+    @Published private(set) var recognitionFallbackNotice: String?
+
+    /// Last Whisper-detected app language ID per source, used to resolve an
+    /// "auto" input for the Apple translation engine (which needs a concrete
+    /// pair) until a segment reports a fresher detection.
+    private var lastDetectedLanguageIDs: [String: String] = [:]
+    private var cancellables = Set<AnyCancellable>()
 
     @Published var sourceLanguageOverrides: [String: String] {
         didSet {
@@ -172,12 +183,10 @@ final class AppModel: ObservableObject {
     @Published var translationEngine: TranslationEngine {
         didSet {
             persistSettings()
-            // Apple translation needs a fixed source language, so leaving AI
-            // mode drops "auto" back to the concrete recognition language.
-            if translationEngine == .apple,
-               inputLanguageID == TranslationCoordinator.automaticSourceLanguageID {
-                inputLanguageID = recognitionLanguageID
-            }
+            // "auto" input no longer resets on engine switch: it is a
+            // recognition-layer capability now, and per-segment detected
+            // languages resolve the Apple translation source (see
+            // resolvedTranslationSourceLanguageID).
         }
     }
 
@@ -258,7 +267,8 @@ final class AppModel: ObservableObject {
         self.sourceLanguageOverrides = settings.sourceLanguageOverrides
         self.sourceOutputLanguageOverrides = settings.sourceOutputLanguageOverrides
         self.inputLanguageID = settings.inputLanguageID
-        self.recognitionLanguageID = settings.recognitionLanguageID
+        self.recognitionModel = WhisperModelManager.Model(rawValue: settings.recognitionModel) ?? .base
+        self.whisperModelManager = WhisperModelManager(initialModel: self.recognitionModel)
         self.outputLanguageID = settings.outputLanguageID
         self.usesSystemInterfaceLanguage = settings.interfaceLanguageID == nil
         self.interfaceLanguageID = LanguageCatalog.preferredInterfaceLanguageID(
@@ -293,6 +303,12 @@ final class AppModel: ObservableObject {
         }
         refreshSources()
         refreshSupportedLanguageOptions()
+        whisperModelManager.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        // Background prewarm only: a session that starts before the model
+        // is ready falls back to Apple instead of waiting.
+        whisperModelManager.prewarmInBackground()
     }
 
     convenience init() {
@@ -357,7 +373,7 @@ final class AppModel: ObservableObject {
 
     func setLanguageID(_ languageID: String, for source: InputSource) {
         var overrides = sourceLanguageOverrides
-        let normalizedLanguageID = supportedSpeechInputLanguageID(languageID)
+        let normalizedLanguageID = supportedInputLanguageID(languageID)
         if normalizedLanguageID == inputLanguageID {
             overrides.removeValue(forKey: source.id)
         } else {
@@ -669,10 +685,21 @@ final class AppModel: ObservableObject {
         for source in selectedSources {
             let sourceLanguageID = languageID(for: source)
             let targetLanguageID = outputLanguageIDForSource(source)
-            // The recognizer needs a concrete locale even when the input is
-            // "auto"; the handlers below keep the "auto" ID so translation
-            // still detects the language from the text.
-            let sessionRecognitionLanguageID = resolvedRecognitionLanguageID(for: sourceLanguageID)
+            // Whisper is the primary recognizer: a nil language means true
+            // auto-detection, and the handlers below keep the "auto" ID so
+            // translation resolves the source per segment. When no Whisper
+            // engine is available (Intel, model still loading, load error),
+            // the session silently falls back to Apple recognition with a
+            // concrete locale, and the user is told why.
+            whisperModelManager.prewarmInBackground()
+            let whisperEngine = whisperModelManager.engine(
+                language: WhisperRecognitionLanguage.whisperCode(forAppLanguageID: sourceLanguageID)
+            )
+            if whisperEngine == nil {
+                recognitionFallbackNotice = fallbackNotice(for: whisperModelManager.fallbackReason)
+            } else {
+                recognitionFallbackNotice = nil
+            }
             let session = LiveTranscriptionSession()
             // Identity only. Capturing the session in the handler it is about to own
             // would retain it for the session's own lifetime.
@@ -681,10 +708,11 @@ final class AppModel: ObservableObject {
             do {
                 try await session.start(
                     source: source,
-                    localeIdentifier: speechLocaleIdentifier(for: sessionRecognitionLanguageID),
+                    localeIdentifier: speechLocaleIdentifier(for: appleFallbackLanguageID(for: sourceLanguageID)),
                     interfaceLanguageID: resolvedInterfaceLanguageID,
                     modeConfig: config,
                     contextualStrings: recognitionHints,
+                    whisperEngine: whisperEngine,
                     transcriptHandler: { [weak self] sentence in
                         self?.enqueueRecognizedSentence(
                             sentence,
@@ -934,7 +962,7 @@ final class AppModel: ObservableObject {
             sourceLanguageOverrides: sourceLanguageOverrides,
             sourceOutputLanguageOverrides: sourceOutputLanguageOverrides,
             inputLanguageID: inputLanguageID,
-            recognitionLanguageID: recognitionLanguageID,
+            recognitionModel: recognitionModel.rawValue,
             outputLanguageID: outputLanguageID,
             interfaceLanguageID: usesSystemInterfaceLanguage ? nil : interfaceLanguageID,
             overlayStyle: overlayStyle,
@@ -1046,54 +1074,78 @@ final class AppModel: ObservableObject {
         LanguageCatalog.displayName(for: identifier, in: resolvedInterfaceLanguageID)
     }
 
-    func supportedSpeechInputLanguageID(_ identifier: String) -> String {
-        identifier == TranslationCoordinator.automaticSourceLanguageID
-            || speechLanguageOptions.contains(where: { $0.id == identifier }) ? identifier : "en"
+    /// Input languages are Whisper capabilities now, not device locales:
+    /// "auto" plus the static Whisper catalog. Anything else falls back to
+    /// English (stale settings values included).
+    func supportedInputLanguageID(_ identifier: String) -> String {
+        WhisperRecognitionLanguage.isSupportedAppLanguageID(identifier) ? identifier : "en"
     }
 
     /// Input-language options for the default picker. "Auto Detect" sits on
-    /// top only in AI mode, because Apple translation needs a fixed pair.
+    /// top unconditionally now: auto-detection is a recognition-layer
+    /// capability (Whisper), not an AI-translation-only feature.
     var inputLanguageOptions: [LanguageOption] {
-        guard translationEngine == .ai else {
-            return speechLanguageOptions
-        }
         let auto = LanguageOption(
             id: TranslationCoordinator.automaticSourceLanguageID,
             displayName: "Auto Detect"
         )
-        return [auto] + speechLanguageOptions
+        return [auto] + WhisperRecognitionLanguage.inputLanguageOptions
     }
 
-    /// Maps an "auto" input to the concrete language the recognizer must
-    /// actually run with. Every other ID passes through untouched.
-    func resolvedRecognitionLanguageID(for sourceLanguageID: String) -> String {
+    /// Apple fallback locale for a source language: concrete IDs pass
+    /// through, "auto" uses the system language (Whisper detection has no
+    /// Apple locale to fall back to).
+    func appleFallbackLanguageID(for sourceLanguageID: String) -> String {
         guard sourceLanguageID == TranslationCoordinator.automaticSourceLanguageID else {
             return sourceLanguageID
         }
-        return recognitionLanguageID == TranslationCoordinator.automaticSourceLanguageID
-            ? "en"
-            : recognitionLanguageID
+        return systemInputLanguageID
     }
 
-    /// Names the selected speech languages that this Mac can only recognize through
-    /// Apple's servers, or nil when everything selected stays on device.
-    var serverSpeechRecognitionNotice: String? {
-        let selectedLanguageIDs = (selectedSources.isEmpty
-            ? [inputLanguageID]
-            : selectedSources.map { languageID(for: $0) })
-            .map { resolvedRecognitionLanguageID(for: $0) }
-
-        let serverLanguageIDs = Set(selectedLanguageIDs).subtracting(onDeviceSpeechLanguageIDs)
-        guard serverLanguageIDs.isEmpty == false else {
-            return nil
+    /// Best app language ID for the device's preferred language, used only
+    /// as the Apple fallback locale when the input is "auto".
+    private var systemInputLanguageID: String {
+        guard let preferred = Locale.preferredLanguages.first else {
+            return "en"
         }
+        let language = Locale(identifier: preferred).language
+        let code = language.languageCode?.identifier ?? "en"
+        if code == "zh" {
+            return language.script?.identifier == "Hant" ? "zh-Hant" : "zh-Hans"
+        }
+        return WhisperRecognitionLanguage.isSupportedAppLanguageID(code) ? code : "en"
+    }
 
-        let names = serverLanguageIDs
-            .map { languageName(for: $0) }
-            .sorted()
-            .joined(separator: ", ")
+    /// Localizes a Whisper fallback reason for the fallback notice.
+    private func fallbackNotice(for reason: WhisperModelManager.FallbackReason) -> String {
+        switch reason {
+        case .intelMac:
+            return localized(.recognitionFellBackToAppleFormat, localized(.recognitionFallbackReasonIntel))
+        case .modelNotReady:
+            return localized(.recognitionFellBackToAppleFormat, localized(.recognitionFallbackReasonLoading))
+        case .error(let message):
+            return localized(.recognitionFellBackToAppleFormat, message)
+        }
+    }
 
-        return localized(.speechUsesAppleServersFormat, names)
+    /// Concrete translation source for a caption. The AI engine already
+    /// detects "auto" from text, so only the Apple engine needs resolving:
+    /// the Whisper-detected language for this segment, else the last
+    /// detected language for this source, else English.
+    private func resolvedTranslationSourceLanguageID(
+        for sourceLanguageID: String,
+        detectedWhisperCode: String?,
+        source: InputSource
+    ) -> String {
+        guard translationEngine == .apple,
+              sourceLanguageID == TranslationCoordinator.automaticSourceLanguageID else {
+            return sourceLanguageID
+        }
+        if let code = detectedWhisperCode,
+           let appLanguageID = WhisperRecognitionLanguage.appLanguageID(forWhisperCode: code) {
+            return appLanguageID
+        }
+        return lastDetectedLanguageIDs[source.id] ?? "en"
     }
 
     private func speechLocaleIdentifier(for languageID: String) -> String {
@@ -1111,8 +1163,7 @@ final class AppModel: ObservableObject {
         languageCatalogRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
-            let resolvedSpeechCatalog = await self.loadSupportedSpeechLanguageOptions()
-            let resolvedSpeechOptions = resolvedSpeechCatalog.options
+            let resolvedSpeechOptions = await self.loadSupportedSpeechLanguageOptions()
             let resolvedTranslationOptions = await self.loadSupportedTranslationLanguageOptions()
             guard Task.isCancelled == false else { return }
 
@@ -1121,23 +1172,18 @@ final class AppModel: ObservableObject {
 
             if resolvedSpeechOptions.isEmpty == false {
                 speechLanguageOptions = resolvedSpeechOptions
-                onDeviceSpeechLanguageIDs = resolvedSpeechCatalog.onDeviceLanguageIDs
-                let supportedIDs = Set(resolvedSpeechOptions.map(\.id))
-                sourceLanguageOverrides = sourceLanguageOverrides.filter {
-                    supportedIDs.contains($0.value)
-                }
-                if inputLanguageID != TranslationCoordinator.automaticSourceLanguageID,
-                   supportedIDs.contains(inputLanguageID) == false {
-                    inputLanguageID = resolvedSpeechOptions.first(where: { $0.id == "en" })?.id
-                        ?? resolvedSpeechOptions[0].id
-                    recognitionLanguageID = inputLanguageID
-                }
-                // The recognizer language must stay usable too, or an "auto"
-                // session would start with a locale this Mac no longer has.
-                if supportedIDs.contains(recognitionLanguageID) == false {
-                    recognitionLanguageID = resolvedSpeechOptions.first(where: { $0.id == "en" })?.id
-                        ?? resolvedSpeechOptions[0].id
-                }
+            }
+
+            // Input languages are Whisper capabilities now, not device
+            // locales, so only the static Whisper list validates them.
+            // Device locales still feed the Apple fallback locale lookup.
+            let whisperSupportedIDs = Set(WhisperRecognitionLanguage.supportedAppLanguageIDs)
+            sourceLanguageOverrides = sourceLanguageOverrides.filter {
+                $0.value == TranslationCoordinator.automaticSourceLanguageID
+                    || whisperSupportedIDs.contains($0.value)
+            }
+            if WhisperRecognitionLanguage.isSupportedAppLanguageID(inputLanguageID) == false {
+                inputLanguageID = "en"
             }
 
             if resolvedTranslationOptions.isEmpty == false {
@@ -1154,7 +1200,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func loadSupportedSpeechLanguageOptions() async -> SpeechLanguageCatalog {
+    private func loadSupportedSpeechLanguageOptions() async -> [LanguageOption] {
         var locales: [Locale] = []
         // Locales that can be recognized without leaving the Mac. A language keeps only
         // one locale, so these have to outrank the rest — otherwise a variant with no
@@ -1179,12 +1225,7 @@ final class AppModel: ObservableObject {
             }
         }
 
-        let options = LanguageCatalog.options(for: locales, preferring: onDeviceLocaleIdentifiers)
-        let onDeviceLanguageIDs = options
-            .filter { $0.localeIdentifier.map(onDeviceLocaleIdentifiers.contains) ?? false }
-            .map(\.id)
-
-        return SpeechLanguageCatalog(options: options, onDeviceLanguageIDs: Set(onDeviceLanguageIDs))
+        return LanguageCatalog.options(for: locales, preferring: onDeviceLocaleIdentifiers)
     }
 
     private func loadSupportedTranslationLanguageOptions() async -> [LanguageOption] {
@@ -1210,30 +1251,47 @@ final class AppModel: ObservableObject {
         speechLanguageIDs: [String],
         translationPairs: [LanguagePairRequirement]
     ) {
+        // With Whisper ready, no Apple speech assets are needed at all, so
+        // speech preparation is empty. Otherwise the Apple fallback needs
+        // its locales prepared. Translation pairs with an "auto" source are
+        // skipped: the pair is only known once Whisper detects a language,
+        // and the coordinator prepares it lazily at translate time.
+        let whisperReady = whisperModelManager.isReady
+        let fallbackSpeechIDs: ([String]) -> [String] = { ids in
+            guard whisperReady == false else {
+                return []
+            }
+            return Array(Set(ids.map { self.appleFallbackLanguageID(for: $0) })).sorted()
+        }
+
         // The AI engine needs no on-device translation resources, so there
         // is nothing to download or block the session on for those pairs.
         if translationEngine == .ai {
             let selectedSources = self.selectedSources
-            let speechLanguageIDs = selectedSources.isEmpty
-                ? [resolvedRecognitionLanguageID(for: inputLanguageID)]
-                : Set(selectedSources.map { resolvedRecognitionLanguageID(for: languageID(for: $0)) }).sorted()
+            let speechLanguageIDs = fallbackSpeechIDs(
+                selectedSources.isEmpty
+                    ? [inputLanguageID]
+                    : selectedSources.map { languageID(for: $0) }
+            )
             return (speechLanguageIDs, [])
         }
 
         let selectedSources = self.selectedSources
         guard selectedSources.isEmpty == false else {
             let translationPairs = inputLanguageID == outputLanguageID
+                || inputLanguageID == TranslationCoordinator.automaticSourceLanguageID
                 ? []
                 : [LanguagePairRequirement(sourceLanguageID: inputLanguageID, targetLanguageID: outputLanguageID)]
-            return ([inputLanguageID], translationPairs)
+            return (fallbackSpeechIDs([inputLanguageID]), translationPairs)
         }
 
-        let speechLanguageIDs = Set(selectedSources.map { languageID(for: $0) }).sorted()
+        let speechLanguageIDs = fallbackSpeechIDs(selectedSources.map { languageID(for: $0) })
         let translationPairs = Set(
             selectedSources.compactMap { source -> LanguagePairRequirement? in
                 let sourceLanguageID = languageID(for: source)
                 let targetLanguageID = outputLanguageIDForSource(source)
-                guard sourceLanguageID != targetLanguageID else {
+                guard sourceLanguageID != targetLanguageID,
+                      sourceLanguageID != TranslationCoordinator.automaticSourceLanguageID else {
                     return nil
                 }
                 return LanguagePairRequirement(
@@ -1875,10 +1933,17 @@ final class AppModel: ObservableObject {
             sourceLanguageID: sourceLanguageID,
             targetLanguageID: targetLanguageID
         ) {
+            // Drafts carry no detection of their own: the Apple engine with
+            // an "auto" input reuses the last detected language for this
+            // source (the commit translation then uses the fresh one).
             scheduleDraftTranslation(
                 for: draftText,
                 promotionID: draftPromotionID,
-                sourceLanguageID: sourceLanguageID,
+                sourceLanguageID: resolvedTranslationSourceLanguageID(
+                    for: sourceLanguageID,
+                    detectedWhisperCode: nil,
+                    source: source
+                ),
                 targetLanguageID: targetLanguageID
             )
         } else {
@@ -2202,6 +2267,19 @@ final class AppModel: ObservableObject {
             return
         }
 
+        // Remember what Whisper detected for this source, and resolve the
+        // translation source for the Apple engine (the AI engine detects
+        // "auto" from text itself and keeps the raw ID).
+        if let code = sentence.detectedLanguageID,
+           let appLanguageID = WhisperRecognitionLanguage.appLanguageID(forWhisperCode: code) {
+            lastDetectedLanguageIDs[source.id] = appLanguageID
+        }
+        let effectiveSourceLanguageID = resolvedTranslationSourceLanguageID(
+            for: sourceLanguageID,
+            detectedWhisperCode: sentence.detectedLanguageID,
+            source: source
+        )
+
         if let promotionID = sentence.promotionSegmentID {
             guard isFinalizedDraftPromotionID(promotionID) == false else {
                 return
@@ -2220,7 +2298,7 @@ final class AppModel: ObservableObject {
                 promotionID: promotionID,
                 sourceText: sourceText,
                 sourceName: source.name,
-                sourceLanguageID: sourceLanguageID,
+                sourceLanguageID: effectiveSourceLanguageID,
                 targetLanguageID: targetLanguageID,
                 promotedDraftTranslation: promotedDraftTranslation
             )
@@ -2241,7 +2319,7 @@ final class AppModel: ObservableObject {
                 promotionID: UUID(),
                 sourceText: sourceText,
                 sourceName: source.name,
-                sourceLanguageID: sourceLanguageID,
+                sourceLanguageID: effectiveSourceLanguageID,
                 targetLanguageID: targetLanguageID,
                 promotedDraftTranslation: nil
             )
@@ -3528,11 +3606,6 @@ struct TranscriptEntry: Identifiable, Equatable {
     let id: UUID
     var sourceText: String
     var translatedText: String
-}
-
-private struct SpeechLanguageCatalog {
-    let options: [LanguageOption]
-    let onDeviceLanguageIDs: Set<String>
 }
 
 private enum LanguageResourcePreparationError: LocalizedError, AppLocalizableError {

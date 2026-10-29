@@ -149,8 +149,8 @@ struct SettingsView: View {
                         )
                         .disabled(model.isLanguagePairLocked)
                     }
-                    if let notice = model.serverSpeechRecognitionNotice {
-                        Label(notice, systemImage: "icloud")
+                    if let notice = model.recognitionFallbackNotice {
+                        Label(notice, systemImage: "exclamationmark.triangle")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -188,6 +188,70 @@ struct SettingsView: View {
                         )
                     }
                     LanguageResourcesFooter(model: model)
+                }
+                settingsCard {
+                    sectionHeader(model.localized(.recognitionModel), icon: "waveform")
+                    SettingsControlRow(label: model.localized(.recognitionModel)) {
+                        Picker("", selection: $model.recognitionModel) {
+                            ForEach(WhisperModelManager.Model.allCases, id: \.self) { recognitionModel in
+                                Text(recognitionModelLabel(recognitionModel)).tag(recognitionModel)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .disabled(model.isLanguagePairLocked)
+                    }
+                    if model.whisperModelManager.isAppleSilicon == false {
+                        Text(model.localized(.recognitionModelIntelNote))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        switch model.whisperModelManager.state {
+                        case .idle:
+                            Text(model.localized(.recognitionModelFirstDownloadNote))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            SecondaryRefreshButton(
+                                title: model.localized(.recognitionModelDownload),
+                                action: { model.whisperModelManager.prewarmInBackground() }
+                            )
+                        case .loading:
+                            Label(model.localized(.recognitionModelLoading), systemImage: "arrow.down.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .ready:
+                            Label(model.localized(.recognitionModelReady), systemImage: "checkmark.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .error(let message):
+                            Label(model.localized(.recognitionModelErrorFormat, message), systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            SecondaryRefreshButton(
+                                title: model.localized(.recognitionModelRetry),
+                                action: { model.whisperModelManager.retry() }
+                            )
+                        }
+                        switch model.whisperModelManager.state {
+                        case .loading, .error:
+                            // The idle branch above already shows this note.
+                            Text(model.localized(.recognitionModelFirstDownloadNote))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        case .idle, .ready:
+                            EmptyView()
+                        }
+                    }
+                    if let notice = model.recognitionFallbackNotice {
+                        Label(notice, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 settingsCard {
                     sectionHeader(model.localized(.translationEngine), icon: "translate")
@@ -601,7 +665,7 @@ struct SettingsView: View {
                     SettingsControlRow(label: model.localized(.inputLanguage)) {
                         DefaultableLanguageMenuPicker(
                             interfaceLanguageID: model.resolvedInterfaceLanguageID,
-                            options: model.speechLanguageOptions,
+                            options: model.inputLanguageOptions,
                             defaultTitle: model.localized(
                                 .useDefaultFormat,
                                 model.languageName(for: model.inputLanguageID)
@@ -639,6 +703,16 @@ struct SettingsView: View {
             get: { model.outputLanguageOverrideID(for: source) },
             set: { model.setOutputLanguageOverrideID($0, for: source) }
         )
+    }
+
+    private func recognitionModelLabel(_ recognitionModel: WhisperModelManager.Model) -> String {
+        let name: String
+        switch recognitionModel {
+        case .tiny: name = model.localized(.recognitionModelTiny)
+        case .base: name = model.localized(.recognitionModelBase)
+        case .small: name = model.localized(.recognitionModelSmall)
+        }
+        return "\(name) · \(recognitionModel.downloadSizeText)"
     }
 
     private var colorsUseDefaultValues: Bool {

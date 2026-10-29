@@ -45,16 +45,15 @@
 
 ## Input and Subtitle Languages
 
-v2s asks Apple's Speech and Translation frameworks which languages the current Mac supports, so the choices automatically follow OS and model updates. Regional variants are collapsed in the UI, while meaningful script variants such as Simplified and Traditional Chinese remain separate. Apple Translation availability is also checked for each source/destination pair before a session starts.
+Subtitle languages come from Apple's Translation framework, so those choices automatically follow OS and model updates. Input languages are the languages the local Whisper models support, plus an "Auto Detect" option that lets the recognizer identify the spoken language per segment. Regional variants are collapsed in the UI, while meaningful script variants such as Simplified and Traditional Chinese remain separate. Apple Translation availability is also checked for each source/destination pair before a session starts.
 
 ## Privacy
 
 - No account, cloud backend, analytics, or telemetry.
 - v2s has no cloud backend and does not send audio or subtitle text to its own servers.
 - Translation uses Apple's on-device Translation framework. Some language packs may need to be downloaded first through System Settings.
-- AI translation is an optional engine, off by default. When enabled, subtitle text (not audio) is sent to your selected API provider for translation; the API key is stored in your Mac Keychain, never in settings files. With the AI engine, the input language offers an "Auto Detect" option: the model identifies the source language from the text, while speech recognition keeps using the last concrete language you picked.
-- Speech recognition prefers Apple's on-device models, and v2s picks a language variant that has a local model whenever one exists.
-- Some languages have no on-device model on a given Mac — this is common on Intel Macs, and for languages outside the modern Speech stack. Those run through Apple's server-based recognition, which needs a network connection, is subject to Apple's service quotas, and sends captured speech to Apple under Apple's privacy terms.
+- AI translation is an optional engine, off by default. When enabled, subtitle text (not audio) is sent to your selected API provider for translation; the API key is stored in your Mac Keychain, never in settings files. The AI engine also detects the source language from the text when the input is "Auto Detect".
+- Speech recognition runs locally with WhisperKit (on-device CoreML models on Apple Silicon): the input language can be a specific language or "Auto Detect", which lets the model identify the spoken language per segment. On first use the selected model (tiny ~80 MB, base ~150 MB, small ~500 MB) is downloaded from HuggingFace and cached locally; audio never leaves the Mac. Apple recognition remains only as an automatic fallback when the model is missing, fails to load, or the Mac uses an Intel chip — Settings shows a notice when a session falls back.
 - Voice activity detection runs the [Silero VAD](THIRD_PARTY_NOTICES.md) model through Apple's system Core ML framework; v2s bundles no third-party inference runtime, and the [conversion is reproducible](scripts/convert_silero_vad_coreml.py).
 
 ## Getting Started

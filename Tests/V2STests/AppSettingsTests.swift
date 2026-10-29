@@ -104,6 +104,62 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(decoded.invisibleInRecording)
     }
 
+    func testSettingsSavedBeforeWhisperDecodeToBaseModel() throws {
+        let json = """
+        {
+          "selectedSourceID": "mic-1",
+          "inputLanguageID": "en",
+          "outputLanguageID": "ja",
+          "subtitleMode": "balanced",
+          "subtitleDisplayMode": "both",
+          "glossary": {}
+        }
+        """
+
+        let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+        XCTAssertEqual(settings.recognitionModel, "base")
+    }
+
+    func testSettingsWithRetiredRecognitionLanguageIDStillDecode() throws {
+        let json = """
+        {
+          "selectedSourceID": "mic-1",
+          "inputLanguageID": "auto",
+          "recognitionLanguageID": "en",
+          "recognitionModel": "small",
+          "outputLanguageID": "ja",
+          "subtitleMode": "balanced",
+          "subtitleDisplayMode": "both",
+          "glossary": {}
+        }
+        """
+
+        let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+        XCTAssertEqual(settings.inputLanguageID, "auto")
+        XCTAssertEqual(settings.recognitionModel, "small")
+    }
+
+    func testRecognitionModelSurvivesAnEncodeDecodeRoundTrip() throws {
+        let settings = AppSettings(
+            selectedSourceID: "mic-1",
+            inputLanguageID: "auto",
+            recognitionModel: "tiny",
+            outputLanguageID: "ja",
+            interfaceLanguageID: "en",
+            overlayStyle: .default,
+            subtitleMode: .balanced,
+            subtitleDisplayMode: .both,
+            glossary: [:]
+        )
+
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+
+        XCTAssertEqual(decoded.recognitionModel, "tiny")
+    }
+
     func testSettingsSavedBeforeAITranslationDecodeToAppleDefaults() throws {
         let json = """
         {

@@ -44,9 +44,10 @@ struct AppSettings: Codable {
     var sourceLanguageOverrides: [String: String]
     var sourceOutputLanguageOverrides: [String: String]
     var inputLanguageID: String
-    /// Concrete language the recognizer uses when inputLanguageID is "auto".
-    /// Updated whenever the user picks a concrete input language.
-    var recognitionLanguageID: String
+    /// Whisper recognition model raw value ("tiny", "base", "small").
+    /// Old files without it decode to "base"; the retired
+    /// recognitionLanguageID key is ignored by JSONDecoder when present.
+    var recognitionModel: String
     var outputLanguageID: String
     var interfaceLanguageID: String?
     var overlayStyle: OverlayStyle
@@ -65,7 +66,7 @@ struct AppSettings: Codable {
         sourceLanguageOverrides: [:],
         sourceOutputLanguageOverrides: [:],
         inputLanguageID: "en",
-        recognitionLanguageID: "en",
+        recognitionModel: "base",
         outputLanguageID: "zh-Hans",
         interfaceLanguageID: nil,
         overlayStyle: .default,
@@ -92,8 +93,8 @@ struct AppSettings: Codable {
             ?? AppSettings.default.sourceOutputLanguageOverrides
         inputLanguageID = (try? c.decodeIfPresent(String.self, forKey: .inputLanguageID))
             ?? AppSettings.default.inputLanguageID
-        recognitionLanguageID = (try? c.decodeIfPresent(String.self, forKey: .recognitionLanguageID))
-            ?? AppSettings.default.recognitionLanguageID
+        recognitionModel = (try? c.decodeIfPresent(String.self, forKey: .recognitionModel))
+            ?? AppSettings.default.recognitionModel
         outputLanguageID = (try? c.decodeIfPresent(String.self, forKey: .outputLanguageID))
             ?? AppSettings.default.outputLanguageID
         interfaceLanguageID = try? c.decodeIfPresent(String.self, forKey: .interfaceLanguageID)
@@ -123,7 +124,7 @@ struct AppSettings: Codable {
         sourceLanguageOverrides: [String: String] = [:],
         sourceOutputLanguageOverrides: [String: String] = [:],
         inputLanguageID: String,
-        recognitionLanguageID: String = "en",
+        recognitionModel: String = "base",
         outputLanguageID: String,
         interfaceLanguageID: String?,
         overlayStyle: OverlayStyle,
@@ -141,7 +142,7 @@ struct AppSettings: Codable {
         self.sourceLanguageOverrides = sourceLanguageOverrides
         self.sourceOutputLanguageOverrides = sourceOutputLanguageOverrides
         self.inputLanguageID  = inputLanguageID
-        self.recognitionLanguageID = recognitionLanguageID
+        self.recognitionModel = recognitionModel
         self.outputLanguageID = outputLanguageID
         self.interfaceLanguageID = interfaceLanguageID
         self.overlayStyle     = overlayStyle

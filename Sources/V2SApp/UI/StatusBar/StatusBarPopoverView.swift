@@ -113,8 +113,8 @@ struct StatusBarPopoverView: View {
                 )
                 .disabled(model.isLanguagePairLocked)
             }
-            if let notice = model.serverSpeechRecognitionNotice {
-                Label(notice, systemImage: "icloud")
+            if let notice = model.recognitionFallbackNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

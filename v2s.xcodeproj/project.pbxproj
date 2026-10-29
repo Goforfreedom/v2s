@@ -41,6 +41,7 @@
 		A00000000000000000000080 /* SileroVAD.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000081 /* SileroVAD.mlpackage */; };
 		A00000000000000000000086 /* UpdaterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000085 /* UpdaterService.swift */; };
 		A00000000000000000000089 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000088 /* Sparkle */; };
+		A000000000000000000000A2 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = A000000000000000000000A1 /* WhisperKit */; };
 		A0000000000000000000008A /* SileroVADHysteresis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000008B /* SileroVADHysteresis.swift */; };
 		A0000000000000000000008C /* QuickSettingsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000008D /* QuickSettingsControls.swift */; };
 		A0000000000000000000008E /* PopoverOutsideClickMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000008F /* PopoverOutsideClickMonitor.swift */; };
@@ -48,6 +49,11 @@
 		A00000000000000000000094 /* TranscriptSummarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000095 /* TranscriptSummarizer.swift */; };
 		A00000000000000000000097 /* AITranslationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000096 /* AITranslationClient.swift */; };
 		A00000000000000000000099 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000098 /* KeychainService.swift */; };
+		A000000000000000000000B1 /* WhisperRecognitionLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B0 /* WhisperRecognitionLanguage.swift */; };
+		A000000000000000000000B3 /* SpeechRecognitionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B2 /* SpeechRecognitionEngine.swift */; };
+		A000000000000000000000B5 /* WhisperTranscriptionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B4 /* WhisperTranscriptionGate.swift */; };
+		A000000000000000000000B7 /* WhisperModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B6 /* WhisperModelManager.swift */; };
+		A000000000000000000000B9 /* WhisperSpeechRecognitionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B8 /* WhisperSpeechRecognitionEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -93,6 +99,11 @@
 		A00000000000000000000095 /* TranscriptSummarizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSummarizer.swift; sourceTree = "<group>"; };
 		A00000000000000000000096 /* AITranslationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITranslationClient.swift; sourceTree = "<group>"; };
 		A00000000000000000000098 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		A000000000000000000000B0 /* WhisperRecognitionLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRecognitionLanguage.swift; sourceTree = "<group>"; };
+		A000000000000000000000B2 /* SpeechRecognitionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognitionEngine.swift; sourceTree = "<group>"; };
+		A000000000000000000000B4 /* WhisperTranscriptionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperTranscriptionGate.swift; sourceTree = "<group>"; };
+		A000000000000000000000B6 /* WhisperModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelManager.swift; sourceTree = "<group>"; };
+		A000000000000000000000B8 /* WhisperSpeechRecognitionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperSpeechRecognitionEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +112,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000089 /* Sparkle in Frameworks */,
+				A000000000000000000000A2 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -206,6 +218,11 @@
 				A00000000000000000000085 /* UpdaterService.swift */,
 				A00000000000000000000096 /* AITranslationClient.swift */,
 				A00000000000000000000098 /* KeychainService.swift */,
+				A000000000000000000000B0 /* WhisperRecognitionLanguage.swift */,
+				A000000000000000000000B2 /* SpeechRecognitionEngine.swift */,
+				A000000000000000000000B4 /* WhisperTranscriptionGate.swift */,
+				A000000000000000000000B6 /* WhisperModelManager.swift */,
+				A000000000000000000000B8 /* WhisperSpeechRecognitionEngine.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -285,6 +302,7 @@
 			name = v2s;
 			packageProductDependencies = (
 				A00000000000000000000088 /* Sparkle */,
+				A000000000000000000000A1 /* WhisperKit */,
 			);
 			productName = v2s;
 			productReference = A0000000000000000000000A /* v2s.app */;
@@ -316,6 +334,7 @@
 			mainGroup = A00000000000000000000002;
 			packageReferences = (
 				A00000000000000000000087 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				A000000000000000000000A0 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			productRefGroup = A00000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -333,6 +352,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.6.0;
+			};
+		};
+		A000000000000000000000A0 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -392,6 +419,11 @@
 				A00000000000000000000086 /* UpdaterService.swift in Sources */,
 				A00000000000000000000097 /* AITranslationClient.swift in Sources */,
 				A00000000000000000000099 /* KeychainService.swift in Sources */,
+				A000000000000000000000B1 /* WhisperRecognitionLanguage.swift in Sources */,
+				A000000000000000000000B3 /* SpeechRecognitionEngine.swift in Sources */,
+				A000000000000000000000B5 /* WhisperTranscriptionGate.swift in Sources */,
+				A000000000000000000000B7 /* WhisperModelManager.swift in Sources */,
+				A000000000000000000000B9 /* WhisperSpeechRecognitionEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -515,6 +547,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A00000000000000000000087 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		A000000000000000000000A1 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A000000000000000000000A0 /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

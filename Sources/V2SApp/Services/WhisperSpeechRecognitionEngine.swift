@@ -157,13 +157,12 @@ final class WhisperSpeechRecognitionEngine: SpeechRecognitionEngine, @unchecked 
         let options = DecodingOptions(language: language)
         // The SDK's single-array overload returns one optional result, not
         // an array (the array form is the plural transcribe(audioArrays:)).
-        let result = try await gate.run {
-            try await self.pipeline.transcribe(
-                audioArray: audio,
-                decodeOptions: options
-            ) { _ in
-                !Task.isCancelled
-            }
+        // The explicit type pins the single-result overload, and no progress
+        // callback is passed, so this compiles whether or not the overload
+        // takes one. A cancelled in-flight call still finishes, but its
+        // result is discarded by the caller's generation guard.
+        let result: TranscriptionResult? = try await gate.run {
+            try await self.pipeline.transcribe(audioArray: audio, decodeOptions: options)
         }
         let text = result?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return (text, result?.language)

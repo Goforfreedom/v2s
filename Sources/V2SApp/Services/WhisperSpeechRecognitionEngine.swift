@@ -155,7 +155,9 @@ final class WhisperSpeechRecognitionEngine: SpeechRecognitionEngine, @unchecked 
 
     private func transcribe(_ audio: [Float]) async throws -> (text: String, language: String?) {
         let options = DecodingOptions(language: language)
-        let results: [TranscriptionResult] = try await gate.run {
+        // The SDK's single-array overload returns one optional result, not
+        // an array (the array form is the plural transcribe(audioArrays:)).
+        let result = try await gate.run {
             try await self.pipeline.transcribe(
                 audioArray: audio,
                 decodeOptions: options
@@ -163,8 +165,7 @@ final class WhisperSpeechRecognitionEngine: SpeechRecognitionEngine, @unchecked 
                 !Task.isCancelled
             }
         }
-        let text = results.map(\.text).joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (text, results.first?.language)
+        let text = result?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (text, result?.language)
     }
 }

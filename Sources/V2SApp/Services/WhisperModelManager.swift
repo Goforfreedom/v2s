@@ -22,13 +22,16 @@ final class WhisperModelManager: ObservableObject {
         case base
         case small
 
-        /// Variant name in argmaxinc/whisperkit-coreml (multilingual, not .en,
-        /// so auto-detection works and non-English speech is covered).
+        /// Model name the SDK resolves (multilingual, not the .en variants,
+        /// so auto-detection works and non-English speech is covered). The
+        /// SDK maps these to the openai_whisper-{model} folders in
+        /// argmaxinc/whisperkit-coreml; the folder prefix is not part of
+        /// the model name.
         var variant: String {
             switch self {
-            case tiny: return "openai_whisper-tiny"
-            case base: return "openai_whisper-base"
-            case small: return "openai_whisper-small"
+            case tiny: return "tiny"
+            case base: return "base"
+            case small: return "small"
             }
         }
 

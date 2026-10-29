@@ -152,6 +152,36 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @Published var translationEngine: TranslationEngine {
+        didSet {
+            persistSettings()
+        }
+    }
+
+    @Published var aiTranslationProvider: AITranslationProvider {
+        didSet {
+            persistSettings()
+        }
+    }
+
+    @Published var aiTranslationBaseURL: String {
+        didSet {
+            persistSettings()
+        }
+    }
+
+    @Published var aiTranslationModel: String {
+        didSet {
+            persistSettings()
+        }
+    }
+
+    @Published var aiTranslationFallbackToApple: Bool {
+        didSet {
+            persistSettings()
+        }
+    }
+
     @Published var interfaceLanguageID: String {
         didSet {
             guard oldValue != interfaceLanguageID else { return }
@@ -215,6 +245,11 @@ final class AppModel: ObservableObject {
         self.subtitleMode = settings.subtitleMode
         self.subtitleDisplayMode = settings.subtitleDisplayMode
         self.glossary = settings.glossary
+        self.translationEngine = settings.translationEngine
+        self.aiTranslationProvider = settings.aiTranslationProvider
+        self.aiTranslationBaseURL = settings.aiTranslationBaseURL
+        self.aiTranslationModel = settings.aiTranslationModel
+        self.aiTranslationFallbackToApple = settings.aiTranslationFallbackToApple
         self.translationHostConfiguration = nil
         AppLocalization.updateEmbeddedBundleLocalizationLanguageID(self.interfaceLanguageID)
 
@@ -228,6 +263,7 @@ final class AppModel: ObservableObject {
 
         isBootstrapping = false
         applyStatusMessage()
+        syncAITranslationConfiguration()
         if normalizedOverlayStyle != settings.overlayStyle {
             persistSettings()
         }
@@ -875,10 +911,88 @@ final class AppModel: ObservableObject {
             overlayStyle: overlayStyle,
             subtitleMode: subtitleMode,
             subtitleDisplayMode: subtitleDisplayMode,
-            glossary: glossary
+            glossary: glossary,
+            translationEngine: translationEngine,
+            aiTranslationProvider: aiTranslationProvider,
+            aiTranslationBaseURL: aiTranslationBaseURL,
+            aiTranslationModel: aiTranslationModel,
+            aiTranslationFallbackToApple: aiTranslationFallbackToApple
         )
 
         settingsStore.save(settings)
+        syncAITranslationConfiguration()
+    }
+
+    /// Pushes the current translation settings (plus the Keychain-held API
+    /// key and the glossary) into the coordinator. Called after every
+    /// settings save and once during initialization, so the coordinator
+    /// never serves a stale engine configuration.
+    private func syncAITranslationConfiguration() {
+        translationCoordinator.translationEngine = translationEngine
+        translationCoordinator.aiConfiguration = TranslationCoordinator.AIConfiguration(
+            baseURL: aiTranslationBaseURL,
+            model: aiTranslationModel,
+            apiKey: aiTranslationAPIKey(),
+            fallbackToApple: aiTranslationFallbackToApple,
+            glossary: glossary,
+            languageName: LanguageCatalog.displayName(for:)
+        )
+    }
+
+    /// Reads the AI translation API key from the Keychain. The key is never
+    /// stored in `settings.json` or any other file.
+    func aiTranslationAPIKey() -> String {
+        KeychainService.load(account: KeychainService.aiTranslationAPIKeyAccount) ?? ""
+    }
+
+    func setAITranslationAPIKey(_ apiKey: String) {
+        if apiKey.isEmpty {
+            KeychainService.delete(account: KeychainService.aiTranslationAPIKeyAccount)
+        } else {
+            KeychainService.save(apiKey, forAccount: KeychainService.aiTranslationAPIKeyAccount)
+        }
+        syncAITranslationConfiguration()
+    }
+
+    /// Applies a provider preset, filling in its default endpoint and model.
+    /// `.custom` keeps whatever the user typed.
+    func updateAITranslationProvider(_ provider: AITranslationProvider) {
+        aiTranslationProvider = provider
+        if provider != .custom {
+            aiTranslationBaseURL = provider.defaultBaseURL
+            aiTranslationModel = provider.defaultModel
+        }
+    }
+
+    /// Verifies the currently configured AI endpoint and key with one small
+    /// request. Returns a localized message and whether it succeeded.
+    func testAITranslationConnection() async -> (message: String, succeeded: Bool) {
+        let apiKey = aiTranslationAPIKey()
+        guard apiKey.isEmpty == false else {
+            return (localized(.aiTranslationMissingAPIKey), false)
+        }
+        let client = AITranslationClient(timeout: 15)
+        do {
+            try await client.testConnection(
+                configuration: AITranslationClient.Configuration(
+                    baseURL: aiTranslationBaseURL,
+                    model: aiTranslationModel,
+                    apiKey: apiKey
+                )
+            )
+            return (localized(.aiTranslationTestSucceeded), true)
+        } catch let error as AITranslationError {
+            switch error {
+            case .unauthorized:
+                return (localized(.aiTranslationTestUnauthorized), false)
+            case .timeout:
+                return (localized(.aiTranslationTestTimeout), false)
+            default:
+                return (localized(.aiTranslationTestFailedFormat, error.localizedDescription), false)
+            }
+        } catch {
+            return (localized(.aiTranslationTestFailedFormat, error.localizedDescription), false)
+        }
     }
 
     private static func normalizedOverlayStyle(_ style: OverlayStyle) -> OverlayStyle {
@@ -1033,6 +1147,16 @@ final class AppModel: ObservableObject {
         speechLanguageIDs: [String],
         translationPairs: [LanguagePairRequirement]
     ) {
+        // The AI engine needs no on-device translation resources, so there
+        // is nothing to download or block the session on for those pairs.
+        if translationEngine == .ai {
+            let selectedSources = self.selectedSources
+            let speechLanguageIDs = selectedSources.isEmpty
+                ? [inputLanguageID]
+                : Set(selectedSources.map { languageID(for: $0) }).sorted()
+            return (speechLanguageIDs, [])
+        }
+
         let selectedSources = self.selectedSources
         guard selectedSources.isEmpty == false else {
             let translationPairs = inputLanguageID == outputLanguageID

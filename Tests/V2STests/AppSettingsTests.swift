@@ -103,4 +103,25 @@ final class AppSettingsTests: XCTestCase {
 
         XCTAssertTrue(decoded.invisibleInRecording)
     }
+
+    func testSettingsSavedBeforeAITranslationDecodeToAppleDefaults() throws {
+        let json = """
+        {
+          "selectedSourceID": "mic-1",
+          "inputLanguageID": "en",
+          "outputLanguageID": "ja",
+          "subtitleMode": "balanced",
+          "subtitleDisplayMode": "both",
+          "glossary": {}
+        }
+        """
+
+        let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+        XCTAssertEqual(settings.translationEngine, .apple)
+        XCTAssertEqual(settings.aiTranslationProvider, .openAI)
+        XCTAssertEqual(settings.aiTranslationBaseURL, "https://api.openai.com/v1")
+        XCTAssertEqual(settings.aiTranslationModel, "gpt-4o-mini")
+        XCTAssertTrue(settings.aiTranslationFallbackToApple)
+    }
 }

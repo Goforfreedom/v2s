@@ -46,6 +46,8 @@
 		A0000000000000000000008E /* PopoverOutsideClickMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000008F /* PopoverOutsideClickMonitor.swift */; };
 		A00000000000000000000090 /* SentenceBoundaryHeuristics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000091 /* SentenceBoundaryHeuristics.swift */; };
 		A00000000000000000000094 /* TranscriptSummarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000095 /* TranscriptSummarizer.swift */; };
+		A00000000000000000000097 /* AITranslationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000096 /* AITranslationClient.swift */; };
+		A00000000000000000000099 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000098 /* KeychainService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,6 +91,8 @@
 		A0000000000000000000008F /* PopoverOutsideClickMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverOutsideClickMonitor.swift; sourceTree = "<group>"; };
 		A00000000000000000000091 /* SentenceBoundaryHeuristics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentenceBoundaryHeuristics.swift; sourceTree = "<group>"; };
 		A00000000000000000000095 /* TranscriptSummarizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSummarizer.swift; sourceTree = "<group>"; };
+		A00000000000000000000096 /* AITranslationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITranslationClient.swift; sourceTree = "<group>"; };
+		A00000000000000000000098 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,6 +204,8 @@
 				A0000000000000000000003A /* SourceCatalogService.swift */,
 				A00000000000000000000047 /* SpeedMonitor.swift */,
 				A00000000000000000000085 /* UpdaterService.swift */,
+				A00000000000000000000096 /* AITranslationClient.swift */,
+				A00000000000000000000098 /* KeychainService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -384,6 +390,8 @@
 				A00000000000000000000060 /* StatusBarPopoverView.swift in Sources */,
 				A00000000000000000000061 /* LiveTranscriptionSession.swift in Sources */,
 				A00000000000000000000086 /* UpdaterService.swift in Sources */,
+				A00000000000000000000097 /* AITranslationClient.swift in Sources */,
+				A00000000000000000000099 /* KeychainService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

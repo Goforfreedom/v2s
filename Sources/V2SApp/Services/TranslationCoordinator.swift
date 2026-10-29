@@ -27,7 +27,20 @@ final class TranslationCoordinator: ObservableObject {
 
     private struct MemoKey: Hashable {
         let pair: LanguagePair
+        let engine: TranslationEngine
         let text: String
+    }
+
+    /// Configuration for the AI translation engine. The API key is held only
+    /// in memory here; it is loaded from the Keychain by the app model and
+    /// never written to the settings file.
+    struct AIConfiguration {
+        var baseURL: String
+        var model: String
+        var apiKey: String
+        var fallbackToApple: Bool
+        var glossary: [String: String]
+        var languageName: (String) -> String
     }
 
     enum Priority {
@@ -115,6 +128,15 @@ final class TranslationCoordinator: ObservableObject {
     var onConfigurationChange: ((TranslationSession.Configuration?) -> Void)?
     var localeIdentifierForLanguageID: ((String) -> String)?
 
+    /// Selected translation engine. `.apple` keeps the original on-device
+    /// path; `.ai` routes requests through the AI API client below.
+    var translationEngine: TranslationEngine = .apple
+    /// Live AI configuration, refreshed by the app model whenever settings
+    /// change. Nil means the AI engine is not configured and requests fall
+    /// back to the Apple path.
+    var aiConfiguration: AIConfiguration?
+    let aiClient = AITranslationClient()
+
     private(set) var configuration: TranslationSession.Configuration? {
         didSet {
             onConfigurationChange?(configuration)
@@ -144,6 +166,11 @@ final class TranslationCoordinator: ObservableObject {
         to targetIdentifier: String
     ) async throws {
         guard sourceIdentifier != targetIdentifier else {
+            return
+        }
+
+        // The AI engine needs no on-device session to warm up.
+        guard translationEngine != .ai else {
             return
         }
 
@@ -193,8 +220,42 @@ final class TranslationCoordinator: ObservableObject {
         }
 
         let pair = LanguagePair(source: sourceIdentifier, target: targetIdentifier)
-        if let memoized = translationMemo[MemoKey(pair: pair, text: trimmedText)] {
+        if let memoized = translationMemo[MemoKey(pair: pair, engine: translationEngine, text: trimmedText)] {
             return memoized
+        }
+
+        // AI engine: one API request per sentence, sharing the memo above
+        // and the caller's failure handling below. The Apple availability
+        // check is intentionally skipped here because API translation is
+        // not limited to Apple's installed language pairs. A cancelled
+        // request is rethrown directly so it never falls back and outlives
+        // the caption it belonged to.
+        if translationEngine == .ai, let aiConfiguration {
+            do {
+                let translated = try await aiClient.translate(
+                    trimmedText,
+                    sourceLanguageName: aiConfiguration.languageName(sourceIdentifier),
+                    targetLanguageName: aiConfiguration.languageName(targetIdentifier),
+                    glossary: aiConfiguration.glossary,
+                    configuration: AITranslationClient.Configuration(
+                        baseURL: aiConfiguration.baseURL,
+                        model: aiConfiguration.model,
+                        apiKey: aiConfiguration.apiKey
+                    )
+                )
+                let resolvedText = translated.isEmpty ? trimmedText : translated
+                if translated.isEmpty == false {
+                    memoizeTranslation(resolvedText, pair: pair, sourceText: trimmedText)
+                }
+                return resolvedText
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard aiConfiguration.fallbackToApple else {
+                    throw error
+                }
+                // Fall through to the Apple path below.
+            }
         }
 
         let requestGeneration = generation
@@ -358,7 +419,7 @@ final class TranslationCoordinator: ObservableObject {
     }
 
     private func memoizeTranslation(_ translatedText: String, pair: LanguagePair, sourceText: String) {
-        let key = MemoKey(pair: pair, text: sourceText)
+        let key = MemoKey(pair: pair, engine: translationEngine, text: sourceText)
         if translationMemo[key] == nil {
             translationMemoOrder.append(key)
             if translationMemoOrder.count > Self.translationMemoLimit {

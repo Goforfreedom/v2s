@@ -167,6 +167,25 @@ enum AppTextKey: String {
     case launchAtLoginUpdateFailedFormat
     case checkForUpdatesAutomatically
     case checkForUpdates
+    case translationEngine
+    case translationEngineApple
+    case translationEngineAI
+    case aiTranslationProvider
+    case aiTranslationProviderOpenAI
+    case aiTranslationProviderDeepSeek
+    case aiTranslationProviderCustom
+    case aiTranslationBaseURL
+    case aiTranslationModel
+    case aiTranslationAPIKey
+    case aiTranslationAPIKeyStoredInKeychain
+    case aiTranslationFallbackToApple
+    case aiTranslationTestConnection
+    case aiTranslationTestSucceeded
+    case aiTranslationTestUnauthorized
+    case aiTranslationTestTimeout
+    case aiTranslationTestFailedFormat
+    case aiTranslationMissingAPIKey
+    case aiTranslationPrivacyNote
 }
 
 enum AppLocalization {
@@ -450,6 +469,25 @@ enum AppLocalization {
             "launchAtLoginUpdateFailedFormat": "Couldn't update launch-at-login setting: %@",
             "checkForUpdatesAutomatically": "Check for Updates Automatically",
             "checkForUpdates": "Check for Updates",
+            "translationEngine": "Translation Engine",
+            "translationEngineApple": "Apple On-Device",
+            "translationEngineAI": "AI API",
+            "aiTranslationProvider": "AI Provider",
+            "aiTranslationProviderOpenAI": "OpenAI",
+            "aiTranslationProviderDeepSeek": "DeepSeek",
+            "aiTranslationProviderCustom": "Custom",
+            "aiTranslationBaseURL": "Base URL",
+            "aiTranslationModel": "Model",
+            "aiTranslationAPIKey": "API Key",
+            "aiTranslationAPIKeyStoredInKeychain": "Stored in your Mac Keychain, never in settings files.",
+            "aiTranslationFallbackToApple": "Fall Back to Apple Translation on API Failure",
+            "aiTranslationTestConnection": "Test Connection",
+            "aiTranslationTestSucceeded": "Connection succeeded.",
+            "aiTranslationTestUnauthorized": "Authentication failed. Check the API key.",
+            "aiTranslationTestTimeout": "Connection timed out.",
+            "aiTranslationTestFailedFormat": "Connection failed: %@",
+            "aiTranslationMissingAPIKey": "Enter an API key first.",
+            "aiTranslationPrivacyNote": "AI translation is optional and off by default. When enabled, subtitle text (not audio) is sent to your selected API provider.",
         ],
         "zh-Hans": [
             "start": "开始",
@@ -613,6 +651,25 @@ enum AppLocalization {
             "launchAtLoginUpdateFailedFormat": "无法更新登录时启动设置：%@",
             "checkForUpdatesAutomatically": "自动检查更新",
             "checkForUpdates": "检查更新",
+            "translationEngine": "翻译引擎",
+            "translationEngineApple": "Apple 本地翻译",
+            "translationEngineAI": "AI API 翻译",
+            "aiTranslationProvider": "AI 服务商",
+            "aiTranslationProviderOpenAI": "OpenAI",
+            "aiTranslationProviderDeepSeek": "DeepSeek",
+            "aiTranslationProviderCustom": "自定义",
+            "aiTranslationBaseURL": "接口地址",
+            "aiTranslationModel": "模型",
+            "aiTranslationAPIKey": "API Key",
+            "aiTranslationAPIKeyStoredInKeychain": "保存在 Mac 钥匙串中，不会写入设置文件。",
+            "aiTranslationFallbackToApple": "API 失败时回退到 Apple 本地翻译",
+            "aiTranslationTestConnection": "测试连接",
+            "aiTranslationTestSucceeded": "连接成功。",
+            "aiTranslationTestUnauthorized": "鉴权失败，请检查 API Key。",
+            "aiTranslationTestTimeout": "连接超时。",
+            "aiTranslationTestFailedFormat": "连接失败：%@",
+            "aiTranslationMissingAPIKey": "请先填写 API Key。",
+            "aiTranslationPrivacyNote": "AI 翻译为可选项，默认关闭。开启后，字幕文本（不含音频）会发送给你选择的 API 服务商。",
         ],
         "es": [
             "start": "Iniciar",

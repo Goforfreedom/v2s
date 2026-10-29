@@ -9,6 +9,9 @@ struct SettingsView: View {
     let quitApp: () -> Void
     let openSubtitleModeInfo: () -> Void
     let showTranscript: () -> Void
+    @State private var aiAPIKeyText = ""
+    @State private var aiTestResult: (message: String, succeeded: Bool)?
+    @State private var isTestingAIConnection = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +33,12 @@ struct SettingsView: View {
             if newState == .running {
                 closeSettings()
             }
+        }
+        .onAppear {
+            aiAPIKeyText = model.aiTranslationAPIKey()
+        }
+        .onChange(of: aiAPIKeyText) { _, newValue in
+            model.setAITranslationAPIKey(newValue)
         }
     }
 
@@ -179,6 +188,79 @@ struct SettingsView: View {
                         )
                     }
                     LanguageResourcesFooter(model: model)
+                }
+                settingsCard {
+                    sectionHeader(model.localized(.translationEngine), icon: "translate")
+                    SettingsControlRow(label: model.localized(.translationEngine)) {
+                        Picker("", selection: $model.translationEngine) {
+                            Text(model.localized(.translationEngineApple)).tag(TranslationEngine.apple)
+                            Text(model.localized(.translationEngineAI)).tag(TranslationEngine.ai)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .disabled(model.isLanguagePairLocked)
+                    }
+                    if model.translationEngine == .ai {
+                        Divider()
+                        Text(model.localized(.aiTranslationPrivacyNote))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SettingsControlRow(label: model.localized(.aiTranslationProvider)) {
+                            Picker("", selection: aiProviderBinding) {
+                                Text(model.localized(.aiTranslationProviderOpenAI)).tag(AITranslationProvider.openAI)
+                                Text(model.localized(.aiTranslationProviderDeepSeek)).tag(AITranslationProvider.deepSeek)
+                                Text(model.localized(.aiTranslationProviderCustom)).tag(AITranslationProvider.custom)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        }
+                        SettingsControlRow(label: model.localized(.aiTranslationBaseURL)) {
+                            TextField("", text: $model.aiTranslationBaseURL)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 260)
+                        }
+                        SettingsControlRow(label: model.localized(.aiTranslationModel)) {
+                            TextField("", text: $model.aiTranslationModel)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 260)
+                        }
+                        SettingsControlRow(label: model.localized(.aiTranslationAPIKey)) {
+                            SecureField("", text: $aiAPIKeyText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 260)
+                        }
+                        Text(model.localized(.aiTranslationAPIKeyStoredInKeychain))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Button(model.localized(.aiTranslationTestConnection)) {
+                                isTestingAIConnection = true
+                                aiTestResult = nil
+                                Task { @MainActor in
+                                    aiTestResult = await model.testAITranslationConnection()
+                                    isTestingAIConnection = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(isTestingAIConnection)
+                            if let aiTestResult {
+                                Text(aiTestResult.message)
+                                    .font(.caption)
+                                    .foregroundStyle(aiTestResult.succeeded ? .green : .red)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                        }
+                        Divider()
+                        settingsRow(model.localized(.aiTranslationFallbackToApple)) {
+                            Toggle("", isOn: $model.aiTranslationFallbackToApple)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                        }
+                    }
                 }
                 settingsCard {
                     sectionHeader(model.localized(.updates), icon: "arrow.triangle.2.circlepath")
@@ -426,6 +508,13 @@ struct SettingsView: View {
         Binding(
             get: { launchAtLoginService.launchesAtLogin },
             set: { launchAtLoginService.setLaunchesAtLogin($0) }
+        )
+    }
+
+    private var aiProviderBinding: Binding<AITranslationProvider> {
+        Binding(
+            get: { model.aiTranslationProvider },
+            set: { model.updateAITranslationProvider($0) }
         )
     }
 

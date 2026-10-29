@@ -238,6 +238,12 @@ struct SettingsView: View {
                             Button(model.localized(.aiTranslationTestConnection)) {
                                 isTestingAIConnection = true
                                 aiTestResult = nil
+                                // Commit the field's current text first:
+                                // SecureField edits are not guaranteed to
+                                // have propagated through onChange when the
+                                // button is tapped, so test against the
+                                // freshly saved key, not a stale one.
+                                model.setAITranslationAPIKey(aiAPIKeyText)
                                 Task { @MainActor in
                                     aiTestResult = await model.testAITranslationConnection()
                                     isTestingAIConnection = false

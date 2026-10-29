@@ -17,20 +17,31 @@ enum KeychainService {
         guard let data = value.data(using: .utf8) else {
             return false
         }
-        let query: [String: Any] = [
+        // The value data must be part of the add query: without it
+        // SecItemAdd fails with errSecParam and nothing is stored, while
+        // the caller only sees a silent false. The update query below
+        // intentionally omits it, because it is a search query and must
+        // match the existing item rather than the new value.
+        let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-        ]
-        let attributes: [String: Any] = [
             kSecValueData as String: data,
         ]
-        let status = SecItemAdd(query as CFDictionary, nil)
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
         if status == errSecSuccess {
             return true
         }
         if status == errSecDuplicateItem {
-            return SecItemUpdate(query as CFDictionary, attributes as CFDictionary) == errSecSuccess
+            let matchQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let attributes: [String: Any] = [
+                kSecValueData as String: data,
+            ]
+            return SecItemUpdate(matchQuery as CFDictionary, attributes as CFDictionary) == errSecSuccess
         }
         return false
     }

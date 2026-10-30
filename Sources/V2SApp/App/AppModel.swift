@@ -267,8 +267,12 @@ final class AppModel: ObservableObject {
         self.sourceLanguageOverrides = settings.sourceLanguageOverrides
         self.sourceOutputLanguageOverrides = settings.sourceOutputLanguageOverrides
         self.inputLanguageID = settings.inputLanguageID
-        self.recognitionModel = WhisperModelManager.Model(rawValue: settings.recognitionModel) ?? .base
-        self.whisperModelManager = WhisperModelManager(initialModel: self.recognitionModel)
+        // A local, not a self read: reading self.recognitionModel here
+        // fails CI with "'self' used before all stored properties are
+        // initialized", because properties below are not assigned yet.
+        let initialRecognitionModel = WhisperModelManager.Model(rawValue: settings.recognitionModel) ?? .base
+        self.recognitionModel = initialRecognitionModel
+        self.whisperModelManager = WhisperModelManager(initialModel: initialRecognitionModel)
         self.outputLanguageID = settings.outputLanguageID
         self.usesSystemInterfaceLanguage = settings.interfaceLanguageID == nil
         self.interfaceLanguageID = LanguageCatalog.preferredInterfaceLanguageID(
